@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     max_deployment_hours: int = 8
     uptime_report_interval_minutes: int = 30
 
+    # Operational guardrails
+    max_spend_per_instance_usd: float = 5.0      # pre-flight: hours × rate must be under this
+    max_concurrent_instances: int = 2            # hard cap on live instances across all providers
+    stuck_pending_minutes: int = 15              # watchdog: destroy if pending longer than this
+    watchdog_check_interval_minutes: int = 5     # how often the watchdog polls
+
     model_config = SettingsConfigDict(
         env_file="C:/Users/keith/dev/.env",
         extra="ignore",

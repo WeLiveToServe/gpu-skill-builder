@@ -104,7 +104,7 @@ async def run_skill(
     Agent mode:   pass provider + hardware_slug + model_repo_id — no prompts.
     Interactive:  omit those three — presents selection menus and confirmation.
     """
-    from scheduler import schedule_ttl, schedule_uptime_report
+    from scheduler import schedule_ttl, schedule_uptime_report, schedule_stuck_watchdog
 
     max_hours = max_deployment_hours or settings.max_deployment_hours
     agent_mode = all(x is not None for x in (provider, hardware_slug, model_repo_id))
@@ -132,6 +132,51 @@ async def run_skill(
         if input("\nProceed? [y/N]: ").strip().lower() != "y":
             return GpuProvisionResult(success=False, message="Cancelled by user.")
 
+    # ── Guardrail 1: pre-flight cost estimate ─────────────────────────────────
+    estimated_cost = max_hours * hardware.price_per_hour
+    if estimated_cost > settings.max_spend_per_instance_usd:
+        return GpuProvisionResult(
+            success=False,
+            message=(
+                f"Pre-flight cost check failed: estimated ${estimated_cost:.2f} "
+                f"({max_hours}h × ${hardware.price_per_hour:.2f}/hr) exceeds limit "
+                f"${settings.max_spend_per_instance_usd:.2f}. "
+                f"Reduce max_deployment_hours or choose cheaper hardware."
+            ),
+        )
+
+    # ── Guardrail 2 & 3: idempotency + concurrency cap ────────────────────────
+    provider_inst = PROVIDER_MAP[provider_key]()
+    try:
+        existing = await provider_inst.list_instances()
+        active_statuses = {"pending", "initializing", "running"}
+
+        # Idempotency: return the instance if it already exists and is active
+        for inst in existing:
+            if inst.name == instance_name and inst.status in active_statuses:
+                print(f"[Guard] '{instance_name}' already exists (status={inst.status}) — returning it.")
+                return GpuProvisionResult(
+                    success=True,
+                    instance=inst,
+                    message=f"Existing instance returned (status={inst.status}).",
+                )
+
+        # Concurrency cap: reject if too many instances already live
+        active_count = sum(1 for i in existing if i.status in active_statuses)
+        if active_count >= settings.max_concurrent_instances:
+            names = [i.name for i in existing if i.status in active_statuses]
+            return GpuProvisionResult(
+                success=False,
+                message=(
+                    f"Concurrency cap reached: {active_count}/{settings.max_concurrent_instances} "
+                    f"instances active {names}. Destroy one before creating another."
+                ),
+            )
+    except Exception as exc:
+        # Non-fatal: log and continue rather than blocking on a list failure
+        print(f"[Guard] Could not check existing instances: {exc}")
+
+    # ── Provision ─────────────────────────────────────────────────────────────
     request = GpuProvisionRequest(
         provider=provider_key,
         hardware_slug=hardware.slug,
@@ -143,13 +188,18 @@ async def run_skill(
 
     print("\nProvisioning instance...")
     try:
-        instance = await PROVIDER_MAP[provider_key]().create_instance(request)
+        instance = await provider_inst.create_instance(request)
     except Exception as exc:
         return GpuProvisionResult(success=False, message=f"Provisioning failed: {exc}")
 
-    # Programmatic: schedule TTL + uptime — never delegated to the LLM
+    # Programmatic: schedule TTL + uptime + watchdog — never delegated to the LLM
     schedule_ttl(instance, max_hours)
     schedule_uptime_report(instance, settings.uptime_report_interval_minutes)
+    schedule_stuck_watchdog(
+        provider_key,
+        timeout_minutes=settings.stuck_pending_minutes,
+        check_interval_minutes=settings.watchdog_check_interval_minutes,
+    )
 
     print(f"\nInstance '{instance.name}' created  [status: {instance.status}]")
     if instance.endpoint_url:

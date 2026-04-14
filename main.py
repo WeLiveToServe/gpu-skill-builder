@@ -7,6 +7,7 @@ import asyncio
 
 from providers import PROVIDER_MAP
 from models import Provider
+from scheduler import reconcile_on_startup
 from skill import run_skill
 
 POLL_INTERVAL_SECONDS = 15
@@ -41,6 +42,10 @@ async def main() -> None:
     print("=" * 50)
     print("  GPU Builder Skill — Test Harness")
     print("=" * 50)
+
+    # Startup reconciliation — re-registers TTL for any instances left running
+    # from a previous process run (guards against orphaned instances on restart)
+    await reconcile_on_startup(Provider.HUGGINGFACE)
 
     result = await run_skill(
         instance_name="gpu-skill-poc",
