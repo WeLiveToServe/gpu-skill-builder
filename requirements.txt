@@ -1,0 +1,9 @@
+pydantic~=2.7
+pydantic-settings~=2.3
+httpx~=0.27
+tenacity~=8.3
+apscheduler~=3.10
+huggingface-hub~=0.23
+python-digitalocean~=1.17
+anthropic~=0.28
+python-dotenv~=1.0
