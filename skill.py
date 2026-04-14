@@ -1,17 +1,22 @@
 """
 gpu-builder skill entry point.
 
-Presents an interactive selection flow:
-  1. Choose GPU provider
-  2. Choose hardware tier
-  3. Choose a compatible OS model (deterministic list, no LLM)
-  4. Confirm and provision
-  5. Programmatically schedule TTL destruction + uptime reporting
+Two modes:
+
+  Agent mode  — pass provider, hardware_slug, and model_repo_id; no prompts, no
+                confirmation. Intended for programmatic / LLM-agent callers.
+
+                result = await run_skill(
+                    provider="huggingface",
+                    hardware_slug="nvidia-t4-x1",
+                    model_repo_id="google/gemma-2-2b-it",
+                )
+
+  Interactive mode — omit those three params; presents a deterministic 3-step
+                     selection flow and asks for confirmation before provisioning.
 """
 
 from __future__ import annotations
-
-import asyncio
 
 from catalog import get_compatible_models
 from config import settings
@@ -59,36 +64,73 @@ def _pick_model(hardware: HardwareTier) -> ModelRecommendation:
         print("  Invalid — enter a number from the list.")
 
 
-# ── Main skill flow ────────────────────────────────────────────────────────────
+# ── Agent mode helpers ─────────────────────────────────────────────────────────
+
+async def _resolve_hardware(provider_key: Provider, hardware_slug: str) -> HardwareTier:
+    hw_list = await PROVIDER_MAP[provider_key]().list_hardware()
+    for hw in hw_list:
+        if hw.slug == hardware_slug:
+            return hw
+    available = ", ".join(h.slug for h in hw_list)
+    raise ValueError(f"Unknown hardware slug '{hardware_slug}' for {provider_key.value}. Available: {available}")
+
+
+def _resolve_model(hardware: HardwareTier, model_repo_id: str) -> ModelRecommendation:
+    models = get_compatible_models(hardware.vram_gb)
+    for m in models:
+        if m.repo_id == model_repo_id:
+            return m
+    available = ", ".join(m.repo_id for m in models)
+    raise ValueError(
+        f"Model '{model_repo_id}' not in catalog for {hardware.vram_gb} GB VRAM. "
+        f"Compatible models: {available}"
+    )
+
+
+# ── Main skill entry point ─────────────────────────────────────────────────────
 
 async def run_skill(
     instance_name: str = "gpu-skill-instance",
     region: str = "us-east-1",
     max_deployment_hours: int | None = None,
+    # Agent-mode params — supply all three to bypass interactive prompts
+    provider: str | None = None,
+    hardware_slug: str | None = None,
+    model_repo_id: str | None = None,
 ) -> GpuProvisionResult:
     """
-    Interactive GPU provisioning skill.
-    Safe to call from any harness via asyncio.run(run_skill(...)).
+    Provision a GPU instance and load a model.
+
+    Agent mode:   pass provider + hardware_slug + model_repo_id — no prompts.
+    Interactive:  omit those three — presents selection menus and confirmation.
     """
-    # Import scheduler here to avoid circular imports at module level
     from scheduler import schedule_ttl, schedule_uptime_report
 
     max_hours = max_deployment_hours or settings.max_deployment_hours
+    agent_mode = all(x is not None for x in (provider, hardware_slug, model_repo_id))
 
-    provider_key = _pick_provider()
-    hardware = await _pick_hardware(provider_key)
-    model = _pick_model(hardware)
+    if agent_mode:
+        try:
+            provider_key = Provider(provider)
+            hardware = await _resolve_hardware(provider_key, hardware_slug)
+            model = _resolve_model(hardware, model_repo_id)
+        except (ValueError, KeyError) as exc:
+            return GpuProvisionResult(success=False, message=str(exc))
+    else:
+        provider_key = _pick_provider()
+        hardware = await _pick_hardware(provider_key)
+        model = _pick_model(hardware)
 
-    print("\n── Summary ──────────────────────────────────")
-    print(f"  Provider  : {provider_key.value}")
-    print(f"  Hardware  : {hardware.display_name}")
-    print(f"  Model     : {model.display_name}  ({model.repo_id})")
-    print(f"  Region    : {region}")
-    print(f"  TTL       : {max_hours}h  (auto-destroy enforced)")
-    print("─────────────────────────────────────────────")
+        print("\n── Summary ──────────────────────────────────")
+        print(f"  Provider  : {provider_key.value}")
+        print(f"  Hardware  : {hardware.display_name}")
+        print(f"  Model     : {model.display_name}  ({model.repo_id})")
+        print(f"  Region    : {region}")
+        print(f"  TTL       : {max_hours}h  (auto-destroy enforced)")
+        print("─────────────────────────────────────────────")
 
-    if input("\nProceed? [y/N]: ").strip().lower() != "y":
-        return GpuProvisionResult(success=False, message="Cancelled by user.")
+        if input("\nProceed? [y/N]: ").strip().lower() != "y":
+            return GpuProvisionResult(success=False, message="Cancelled by user.")
 
     request = GpuProvisionRequest(
         provider=provider_key,
@@ -101,8 +143,7 @@ async def run_skill(
 
     print("\nProvisioning instance...")
     try:
-        provider = PROVIDER_MAP[provider_key]()
-        instance = await provider.create_instance(request)
+        instance = await PROVIDER_MAP[provider_key]().create_instance(request)
     except Exception as exc:
         return GpuProvisionResult(success=False, message=f"Provisioning failed: {exc}")
 
