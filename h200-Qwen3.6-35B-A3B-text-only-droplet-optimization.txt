@@ -1,0 +1,1 @@
+﻿[{'VLLM_ENABLE_AIC': -1}, {'VLLM_KV_CACHE_FREEING': -1}, {'VLLM_CACHE_QUANTIZATION': -1}, {'VLLM_BLOCK_MANAGER_V2': -1}, {'):8000"\necho "🔧 For monitoring, run: watch -n 5 \'nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv': 'echo', 'check': "curl -f http://localhost:8000/health || echo 'Service unhealthy'"}]
