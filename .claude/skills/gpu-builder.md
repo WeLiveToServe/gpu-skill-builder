@@ -46,7 +46,7 @@ The user confirms before any resources are created.
 | Uptime reporting | `scheduler.schedule_uptime_report()` — APScheduler IntervalTrigger |
 | Retry on API failure | `tenacity` decorators on provider methods |
 | Model ↔ VRAM matching | `catalog.get_compatible_models()` — static lookup table |
-| Credentials | `pydantic-settings` — loaded from `C:/Users/keith/dev/.env` |
+| Credentials | `pydantic-settings` — local `gpu-skill-builder/.env` first, then `C:/Users/keith/dev/.env` |
 
 ## Supported providers
 
@@ -68,4 +68,6 @@ The user confirms before any resources are created.
 | Variable | Provider |
 |---|---|
 | `HF_TOKEN` | HuggingFace |
-| `DIGITALOCEAN_TOKEN` | DigitalOcean |
+| `DIGITALOCEAN_ACCESS_TOKEN` | DigitalOcean |
+| `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` | Modal |
+| `OPENROUTER_API_KEY` | OpenRouter fallback |

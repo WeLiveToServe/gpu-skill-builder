@@ -95,9 +95,9 @@ not to inventing the list itself.
 
 ### Why are credentials loaded via pydantic-settings?
 
-All tokens come from a shared `.env` file via `pydantic-settings`. This means the
-skill works the same whether called interactively, from a test harness, or from a
-remote agent — no credential argument threading, no hardcoded paths in provider code.
+Credentials are loaded local-first from `gpu-skill-builder/.env` with a fallback to
+`C:/Users/keith/dev/.env`. This keeps the repo self-contained while preserving
+backward compatibility with existing shared env setups.
 
 ### Why is the TTL programmatic and not delegated to the LLM?
 
@@ -137,6 +137,7 @@ immediately on a name collision, making repeat calls safe.
 | HuggingFace | Ready | Uses HF Inference Endpoints API v2. Endpoint is OpenAI-compatible. Requires payment method on account. |
 | DigitalOcean | Ready (secondary) | H200 GPU (`gpu-h200x1-141gb`) in `atl1` confirmed working. SSH key: `codex-do-oci-ampere`. |
 | Modal | Ready | Deploys an OpenAI-compatible vLLM app endpoint via `modal deploy`. |
+| OpenRouter | Fallback lane | OpenAI-compatible serverless fallback when GPU path fails or later becomes unhealthy. |
 | AMD / MI300X | Blocked | DO account has $200 AMD credits but AMD GPU entitlement not enabled on the backend. Needs DO support ticket. See `human-amd-credits-use.md`. |
 
 ---
@@ -150,7 +151,9 @@ gpu-skill-builder/
 │   ├── __init__.py                 ← PROVIDER_MAP registry
 │   ├── base.py                     ← Abstract GpuProvider interface
 │   ├── hf_provider.py              ← HuggingFace Inference Endpoints (v2 API)
-│   └── do_provider.py              ← DigitalOcean droplets
+│   ├── do_provider.py              ← DigitalOcean droplets
+│   ├── modal_provider.py           ← Modal vLLM deployments
+│   └── openrouter_provider.py      ← OpenRouter fallback adapter
 ├── config.py                       ← Settings via pydantic-settings (.env loader)
 ├── models.py                       ← Pydantic models: request, result, instance
 ├── catalog.py                      ← Static VRAM→model map (~20 curated models)
@@ -175,13 +178,53 @@ pip install -r requirements.txt
 Required environment variables (in your `.env`):
 
 ```
-HF_TOKEN=hf_...               # HuggingFace — required for HF provider
-DIGITALOCEAN_ACCESS_TOKEN=dop_v1_... # DigitalOcean — required for DO provider
-MODAL_TOKEN_ID=ak-...         # Modal token id
-MODAL_TOKEN_SECRET=as-...     # Modal token secret
+HF_TOKEN=hf_...                         # HuggingFace provider
+DIGITALOCEAN_ACCESS_TOKEN=dop_v1_...    # DigitalOcean provider
+MODAL_TOKEN_ID=ak-...                   # Modal token id
+MODAL_TOKEN_SECRET=as-...               # Modal token secret
+OPENROUTER_API_KEY=sk-or-...            # OpenRouter fallback provider
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=openrouter/auto
 ```
 
-The `.env` path is configured in `config.py`. Default is `C:/Users/keith/dev/.env`.
+The settings loader checks env sources in this order:
+1. Existing process environment variables
+2. `gpu-skill-builder/.env` (primary)
+3. `C:/Users/keith/dev/.env` (fallback)
+
+Do not use `OPENAI_API_KEY` for OpenRouter in this repo. Keep provider-scoped names
+(`OPENROUTER_API_KEY`, `MODAL_TOKEN_*`, etc.) to avoid key collisions across
+OpenAI-compatible services.
+
+### Local `.env` template for new users
+
+Create `gpu-skill-builder/.env` with blank placeholders:
+
+```
+HF_TOKEN=
+DIGITALOCEAN_ACCESS_TOKEN=
+MODAL_TOKEN_ID=
+MODAL_TOKEN_SECRET=
+OPENROUTER_API_KEY=
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=openrouter/auto
+```
+
+Share this template with future users and have each user fill values locally.
+
+---
+
+## Runtime continuity helper
+
+For long sessions, call `ensure_active_endpoint(result)` before model usage. If the
+GPU endpoint has failed, expired, or become unhealthy, it returns a result that is
+automatically switched to OpenRouter with explicit fallback metadata.
+
+`GpuProvisionResult` includes:
+- `fallback_activated`
+- `fallback_provider`
+- `fallback_reason`
+- `primary_provider_error`
 
 ---
 
