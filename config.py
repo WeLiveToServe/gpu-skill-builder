@@ -3,9 +3,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Provider credentials
-    hf_token: str = Field(alias="HF_TOKEN")
-    digitalocean_token: str = Field(default="", alias="DIGITALOCEAN_TOKEN")
+    # Provider credentials — all optional; each provider validates its own at init
+    hf_token: str = Field(default="", alias="HF_TOKEN")
+    digitalocean_token: str = Field(default="", alias="DIGITALOCEAN_ACCESS_TOKEN")
+    modal_token_id: str = Field(default="", alias="MODAL_TOKEN_ID")
+    modal_token_secret: str = Field(default="", alias="MODAL_TOKEN_SECRET")
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
 
     # Programmatic deployment controls — never delegated to the LLM

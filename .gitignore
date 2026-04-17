@@ -22,3 +22,12 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local runtime state / generated artifacts
+.do_state.json
+.modal_state.json
+h100-ip.txt
+modal_apps/*.py
+billing-query-providers/output/
+billing-query-providers/offloaded-test-gap-audit-excluding-gpu-skill-builder.md
+h200-droplet-optimization.txt

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class Provider(str, Enum):
     HUGGINGFACE = "huggingface"
     DIGITALOCEAN = "digitalocean"
+    MODAL = "modal"
 
 
 class HardwareTier(BaseModel):

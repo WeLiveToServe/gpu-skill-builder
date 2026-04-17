@@ -29,6 +29,10 @@ OpenAI chat completions API can use it immediately after provision.
 PYTHONIOENCODING=utf-8 python main.py
 ```
 
+## Project Handoff Plan
+
+For detailed information about completed work, cloud provider configurations, and next steps, please see the [handoff-plan.md](handoff-plan.md) document. This file contains comprehensive documentation of all research, setup, and configuration work completed to date, and should be consumed by the next agent working on this project.
+
 Walks through a three-step selection menu: provider → hardware tier → model.
 Shows a summary and asks for confirmation before spending anything.
 
@@ -132,6 +136,7 @@ immediately on a name collision, making repeat calls safe.
 |---|---|---|
 | HuggingFace | Ready | Uses HF Inference Endpoints API v2. Endpoint is OpenAI-compatible. Requires payment method on account. |
 | DigitalOcean | Ready (secondary) | H200 GPU (`gpu-h200x1-141gb`) in `atl1` confirmed working. SSH key: `codex-do-oci-ampere`. |
+| Modal | Ready | Deploys an OpenAI-compatible vLLM app endpoint via `modal deploy`. |
 | AMD / MI300X | Blocked | DO account has $200 AMD credits but AMD GPU entitlement not enabled on the backend. Needs DO support ticket. See `human-amd-credits-use.md`. |
 
 ---
@@ -171,7 +176,9 @@ Required environment variables (in your `.env`):
 
 ```
 HF_TOKEN=hf_...               # HuggingFace — required for HF provider
-DIGITALOCEAN_TOKEN=dop_v1_... # DigitalOcean — required for DO provider
+DIGITALOCEAN_ACCESS_TOKEN=dop_v1_... # DigitalOcean — required for DO provider
+MODAL_TOKEN_ID=ak-...         # Modal token id
+MODAL_TOKEN_SECRET=as-...     # Modal token secret
 ```
 
 The `.env` path is configured in `config.py`. Default is `C:/Users/keith/dev/.env`.
@@ -203,6 +210,11 @@ Models are matched to hardware by VRAM. Only models verified to fit are shown.
 | 320 GB | 4× A100 | Llama 3.1 405B FP8, Llama 3.3 70B, Qwen 2.5 72B |
 
 ---
+
+## H200 Optimization Notes
+
+See [h200-Qwen3.6-35B-A3B-text-only-droplet-optimization.txt](h200-Qwen3.6-35B-A3B-text-only-droplet-optimization.txt).
+This includes advanced vLLM flags for ACP (Automatic Compression Pooling), KV cache management, and monitoring guidance.
 
 ## Adding a provider
 

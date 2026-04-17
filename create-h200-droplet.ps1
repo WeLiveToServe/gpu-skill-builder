@@ -1,5 +1,15 @@
-$token = (Select-String -Path "C:\Users\keith\dev\.env" -Pattern "^DIGITALOCEAN_ACCESS_TOKEN=" |
-    ForEach-Object { $_.Line.Split("=",2)[1] })
+# Extract token with strict format handling
+# Validate token extraction thoroughly
+$tokenLine = Get-Content "C:/Users/keith/dev/.env" | Where-Object { $_ -match '^DIGITALOCEAN_ACCESS_TOKEN=.*$' } | Select-Object -First 1
+if (-not $tokenLine) {
+    Write-Output "CRITICAL: No token found. Check .env for DIGITALOCEAN_ACCESS_TOKEN="
+    exit 1
+}
+$token = $tokenLine.Split('=', 2)[1].Trim()
+if (-not $token) {
+    Write-Output "CRITICAL: Empty token value. Check .env formatting"
+    exit 1
+}
 $headers = @{
     Authorization  = "Bearer $token"
     "Content-Type" = "application/json"
@@ -18,7 +28,7 @@ Write-Output "=== Creating H200 droplet ==="
 
 $body = @{
     name       = "agent-harness-h200"
-    region     = "nyc2"
+    region     = "ams3"
     size       = "gpu-h200x1-141gb"
     image      = "gpu-h100x1-base"
     ssh_keys   = @("55531916")
@@ -58,7 +68,7 @@ try {
             Write-Output "  Size: $($check.droplet.size_slug)"
             Write-Output ""
             Write-Output "SSH command:"
-            Write-Output "  ssh -i C:\Users\keith\.ssh\oci_ampere_ed25519 root@$publicIP"
+            Write-Output "  ssh -i C:\Users\keith\.ssh\do_agent_ed25519 root@$publicIP"
             # Save IP for next step
             $publicIP | Out-File -FilePath "C:\Users\keith\dev\gpu-skill-builder\h200-ip.txt" -NoNewline
             exit 0
