@@ -14,6 +14,7 @@ build/
 
 # Claude Code session data (keep skills, ignore sessions)
 .claw/
+.claude/settings.local.json
 
 # IDE
 .vscode/
@@ -26,7 +27,7 @@ Thumbs.db
 # Local runtime state / generated artifacts
 .do_state.json
 .modal_state.json
-h100-ip.txt
+*-ip.txt
 modal_apps/*.py
 billing-query-providers/output/
 billing-query-providers/offloaded-test-gap-audit-excluding-gpu-skill-builder.md
