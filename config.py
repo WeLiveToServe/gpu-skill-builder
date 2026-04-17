@@ -1,27 +1,67 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from dotenv import dotenv_values
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+LOCAL_ENV_FILE = Path(__file__).parent / ".env"
+SHARED_ENV_FILE = Path("C:/Users/keith/dev/.env")
+
+
+def _seed_environment() -> None:
+    """
+    Load shared then local .env values into process env.
+    Precedence:
+      1) Existing process env (highest)
+      2) Repo-local .env
+      3) Shared /dev/.env (fallback)
+    """
+    original_keys = set(os.environ.keys())
+
+    if SHARED_ENV_FILE.exists():
+        for key, value in dotenv_values(SHARED_ENV_FILE).items():
+            if key and value is not None and key not in os.environ:
+                os.environ[key] = value
+
+    if LOCAL_ENV_FILE.exists():
+        for key, value in dotenv_values(LOCAL_ENV_FILE).items():
+            if not key or value is None:
+                continue
+            if key in original_keys:
+                continue
+            os.environ[key] = value
+
+
+_seed_environment()
+
 
 class Settings(BaseSettings):
-    # Provider credentials — all optional; each provider validates its own at init
+    # Provider credentials — optional at settings layer; each provider validates as needed.
     hf_token: str = Field(default="", alias="HF_TOKEN")
     digitalocean_token: str = Field(default="", alias="DIGITALOCEAN_ACCESS_TOKEN")
     modal_token_id: str = Field(default="", alias="MODAL_TOKEN_ID")
     modal_token_secret: str = Field(default="", alias="MODAL_TOKEN_SECRET")
+    openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
 
-    # Programmatic deployment controls — never delegated to the LLM
+    # OpenAI-compatible OpenRouter endpoint config (provider-specific names prevent OPENAI_API_KEY collisions).
+    openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
+    openrouter_model: str = Field(default="openrouter/auto", alias="OPENROUTER_MODEL")
+
+    # Programmatic deployment controls — never delegated to the LLM.
     max_deployment_hours: int = 8
     uptime_report_interval_minutes: int = 30
 
-    # Operational guardrails
-    max_spend_per_instance_usd: float = 5.0      # pre-flight: hours × rate must be under this
-    max_concurrent_instances: int = 2            # hard cap on live instances across all providers
-    stuck_pending_minutes: int = 15              # watchdog: destroy if pending longer than this
-    watchdog_check_interval_minutes: int = 5     # how often the watchdog polls
+    # Operational guardrails.
+    max_spend_per_instance_usd: float = 5.0
+    max_concurrent_instances: int = 2
+    stuck_pending_minutes: int = 15
+    watchdog_check_interval_minutes: int = 5
 
     model_config = SettingsConfigDict(
-        env_file="C:/Users/keith/dev/.env",
         extra="ignore",
         populate_by_name=True,
     )

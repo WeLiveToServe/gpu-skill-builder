@@ -18,16 +18,20 @@ Two modes:
 
 from __future__ import annotations
 
+import httpx
+
 from catalog import get_compatible_models
 from config import settings
-from models import GpuProvisionRequest, GpuProvisionResult, HardwareTier, ModelRecommendation, Provider
+from models import GpuProvisionRequest, GpuProvisionResult, HardwareTier, InstanceInfo, ModelRecommendation, Provider
 from providers import PROVIDER_MAP
+
+ACTIVE_STATUSES = {"pending", "initializing", "running", "deployed"}
 
 
 # ── Interactive prompts ────────────────────────────────────────────────────────
 
 def _pick_provider() -> Provider:
-    options = list(PROVIDER_MAP.keys())
+    options = [p for p in PROVIDER_MAP.keys() if p != Provider.OPENROUTER]
     print("\nGPU Providers:")
     for i, p in enumerate(options, 1):
         print(f"  {i}. {p.value}")
@@ -87,6 +91,107 @@ def _resolve_model(hardware: HardwareTier, model_repo_id: str) -> ModelRecommend
     )
 
 
+def _openrouter_instance(instance_name: str) -> InstanceInfo:
+    return InstanceInfo(
+        id=f"{instance_name}-openrouter-fallback",
+        name=instance_name,
+        provider=Provider.OPENROUTER,
+        hardware_slug="openrouter-default",
+        model_repo_id=settings.openrouter_model,
+        status="running",
+        endpoint_url=settings.openrouter_base_url.rstrip("/"),
+        region="global",
+    )
+
+
+def _fallback_result(
+    instance_name: str,
+    reason: str,
+    primary_provider_error: str | None = None,
+) -> GpuProvisionResult:
+    if not settings.openrouter_api_key:
+        return GpuProvisionResult(
+            success=False,
+            message=(
+                "GPU path unavailable and OpenRouter fallback is not configured. "
+                "Set OPENROUTER_API_KEY in gpu-skill-builder/.env."
+            ),
+            fallback_activated=False,
+            fallback_provider=Provider.OPENROUTER,
+            fallback_reason=reason,
+            primary_provider_error=primary_provider_error,
+        )
+    return GpuProvisionResult(
+        success=True,
+        instance=_openrouter_instance(instance_name),
+        message=f"GPU path unavailable; switched to OpenRouter fallback. Reason: {reason}",
+        fallback_activated=True,
+        fallback_provider=Provider.OPENROUTER,
+        fallback_reason=reason,
+        primary_provider_error=primary_provider_error,
+    )
+
+
+# ── Runtime continuity helper ──────────────────────────────────────────────────
+
+async def ensure_active_endpoint(result: GpuProvisionResult) -> GpuProvisionResult:
+    """
+    Verify active endpoint health and switch to OpenRouter fallback if needed.
+    Use this in long-running sessions where TTL/provider failures can happen after
+    provisioning has already succeeded.
+    """
+    if not result.success or not result.instance:
+        return result
+    if result.instance.provider == Provider.OPENROUTER:
+        return result
+
+    inst = result.instance
+    provider_inst = PROVIDER_MAP[inst.provider]()
+    try:
+        current = await provider_inst.get_instance(inst.id)
+    except Exception as exc:
+        return _fallback_result(
+            instance_name=inst.name,
+            reason=f"{inst.provider.value} instance lookup failed ({exc})",
+            primary_provider_error=str(exc),
+        )
+
+    if current.status not in ACTIVE_STATUSES:
+        return _fallback_result(
+            instance_name=inst.name,
+            reason=f"{inst.provider.value} status is '{current.status}'",
+            primary_provider_error=f"status={current.status}",
+        )
+
+    if current.endpoint_url:
+        probe_url = f"{current.endpoint_url.rstrip('/')}/health"
+        try:
+            async with httpx.AsyncClient(timeout=8) as client:
+                resp = await client.get(probe_url)
+            if resp.status_code >= 400:
+                return _fallback_result(
+                    instance_name=inst.name,
+                    reason=f"{inst.provider.value} endpoint health check failed ({resp.status_code})",
+                    primary_provider_error=f"http_status={resp.status_code}",
+                )
+        except Exception as exc:
+            return _fallback_result(
+                instance_name=inst.name,
+                reason=f"{inst.provider.value} endpoint health check error ({exc})",
+                primary_provider_error=str(exc),
+            )
+
+    return GpuProvisionResult(
+        success=True,
+        instance=current,
+        message=result.message or "Instance is healthy.",
+        fallback_activated=result.fallback_activated,
+        fallback_provider=result.fallback_provider,
+        fallback_reason=result.fallback_reason,
+        primary_provider_error=result.primary_provider_error,
+    )
+
+
 # ── Main skill entry point ─────────────────────────────────────────────────────
 
 async def run_skill(
@@ -112,6 +217,8 @@ async def run_skill(
     if agent_mode:
         try:
             provider_key = Provider(provider)
+            if provider_key == Provider.OPENROUTER:
+                return _fallback_result(instance_name, "OpenRouter selected explicitly by caller.")
             hardware = await _resolve_hardware(provider_key, hardware_slug)
             model = _resolve_model(hardware, model_repo_id)
         except (ValueError, KeyError) as exc:
@@ -149,11 +256,10 @@ async def run_skill(
     provider_inst = PROVIDER_MAP[provider_key]()
     try:
         existing = await provider_inst.list_instances()
-        active_statuses = {"pending", "initializing", "running"}
 
         # Idempotency: return the instance if it already exists and is active
         for inst in existing:
-            if inst.name == instance_name and inst.status in active_statuses:
+            if inst.name == instance_name and inst.status in ACTIVE_STATUSES:
                 print(f"[Guard] '{instance_name}' already exists (status={inst.status}) — returning it.")
                 return GpuProvisionResult(
                     success=True,
@@ -162,9 +268,9 @@ async def run_skill(
                 )
 
         # Concurrency cap: reject if too many instances already live
-        active_count = sum(1 for i in existing if i.status in active_statuses)
+        active_count = sum(1 for i in existing if i.status in ACTIVE_STATUSES)
         if active_count >= settings.max_concurrent_instances:
-            names = [i.name for i in existing if i.status in active_statuses]
+            names = [i.name for i in existing if i.status in ACTIVE_STATUSES]
             return GpuProvisionResult(
                 success=False,
                 message=(
@@ -190,7 +296,11 @@ async def run_skill(
     try:
         instance = await provider_inst.create_instance(request)
     except Exception as exc:
-        return GpuProvisionResult(success=False, message=f"Provisioning failed: {exc}")
+        return _fallback_result(
+            instance_name=instance_name,
+            reason=f"{provider_key.value} provisioning failed ({exc})",
+            primary_provider_error=str(exc),
+        )
 
     # Programmatic: schedule TTL + uptime + watchdog — never delegated to the LLM
     schedule_ttl(instance, max_hours)
@@ -205,4 +315,5 @@ async def run_skill(
     if instance.endpoint_url:
         print(f"Endpoint URL : {instance.endpoint_url}")
 
-    return GpuProvisionResult(success=True, instance=instance, message="Instance created successfully.")
+    result = GpuProvisionResult(success=True, instance=instance, message="Instance created successfully.")
+    return await ensure_active_endpoint(result)

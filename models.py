@@ -10,6 +10,7 @@ class Provider(str, Enum):
     HUGGINGFACE = "huggingface"
     DIGITALOCEAN = "digitalocean"
     MODAL = "modal"
+    OPENROUTER = "openrouter"
 
 
 class HardwareTier(BaseModel):
@@ -55,3 +56,7 @@ class GpuProvisionResult(BaseModel):
     success: bool
     instance: Optional[InstanceInfo] = None
     message: str = ""
+    fallback_activated: bool = False
+    fallback_provider: Optional[Provider] = None
+    fallback_reason: str = ""
+    primary_provider_error: Optional[str] = None
