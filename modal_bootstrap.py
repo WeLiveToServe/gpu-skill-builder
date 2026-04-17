@@ -23,7 +23,8 @@ from pathlib import Path
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-ENV_FILE = Path("C:/Users/keith/dev/.env")
+LOCAL_ENV_FILE = Path(__file__).parent / ".env"
+SHARED_ENV_FILE = Path("C:/Users/keith/dev/.env")
 MODAL_APPS_DIR = Path(__file__).parent / "modal_apps"
 STATE_FILE = Path(__file__).parent / ".modal_state.json"
 
@@ -97,17 +98,22 @@ def resolve_modal_env() -> dict[str, str]:
     token_secret = os.environ.get("MODAL_TOKEN_SECRET")
 
     if not token_id or not token_secret:
-        if ENV_FILE.exists():
-            for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
-                if line.startswith("MODAL_TOKEN_ID="):
+        for env_file in (LOCAL_ENV_FILE, SHARED_ENV_FILE):
+            if not env_file.exists():
+                continue
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                if line.startswith("MODAL_TOKEN_ID=") and not token_id:
                     token_id = line.split("=", 1)[1].strip()
-                elif line.startswith("MODAL_TOKEN_SECRET="):
+                elif line.startswith("MODAL_TOKEN_SECRET=") and not token_secret:
                     token_secret = line.split("=", 1)[1].strip()
+            if token_id and token_secret:
+                break
 
     if not token_id or not token_secret:
         raise RuntimeError(
             "Modal credentials not found.\n"
-            "Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in C:/Users/keith/dev/.env\n"
+            "Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in gpu-skill-builder/.env\n"
+            "Or set them in C:/Users/keith/dev/.env\n"
             "Or run: modal token set --token-id ak-... --token-secret as-..."
         )
 
@@ -121,7 +127,7 @@ def normalize_gpu(gpu: str) -> str:
 
 # ── App file generation ───────────────────────────────────────────────────────
 
-def _generate_app_file(app_name: str, gpu_slug: str, model_id: str) -> Path:
+def _generate_app_file(app_name: str, gpu_slug: str, model_id: str, hf_token: str | None = None) -> Path:
     """
     Writes a Modal app Python file to modal_apps/{app_name}.py.
     Returns the path.
@@ -131,6 +137,15 @@ def _generate_app_file(app_name: str, gpu_slug: str, model_id: str) -> Path:
     # Escape model_id for embedding in Python string
     safe_model = model_id.replace('"', '\\"')
     safe_app   = app_name.replace('"', '\\"')
+
+    secret_block = "        "
+    if hf_token:
+        secret_block = (
+            "        secrets=[modal.Secret.from_dict({"
+            f"\"HF_TOKEN\": \"{hf_token}\", "
+            f"\"HUGGING_FACE_HUB_TOKEN\": \"{hf_token}\""
+            "})],"
+        )
 
     code = textwrap.dedent(f'''\
         """
@@ -156,6 +171,7 @@ def _generate_app_file(app_name: str, gpu_slug: str, model_id: str) -> Path:
             image=vllm_image,
             timeout=3600,
             min_containers=1,
+{secret_block}
         )
         @modal.concurrent(max_inputs=100)
         class VLLMServer:
@@ -173,6 +189,9 @@ def _generate_app_file(app_name: str, gpu_slug: str, model_id: str) -> Path:
                     "--enable-prefix-caching",
                     "--language-model-only",
                     "--served-model-name", self.model_id,
+                    # OpenCode sends tool_choice="auto"; enable parser extraction for Qwen models.
+                    "--enable-auto-tool-choice",
+                    "--tool-call-parser", "hermes",
                 ]
                 self._proc = subprocess.Popen(cmd)
 
@@ -249,7 +268,8 @@ async def deploy_vllm_app(
         return ModalInstanceInfo(**existing)
 
     print(f"Generating Modal app '{app_name}' ({gpu_slug}, {model})...")
-    app_file = _generate_app_file(app_name, gpu_slug, model)
+    hf_token = _resolve_hf_token()
+    app_file = _generate_app_file(app_name, gpu_slug, model, hf_token=hf_token)
 
     print("Deploying to Modal (this builds the container image on first run ~2-3 min)...")
     env = resolve_modal_env()
@@ -311,6 +331,28 @@ async def deploy_vllm_app(
     _save_state(state)
 
     return info
+
+
+def _resolve_hf_token() -> str | None:
+    """
+    Resolve HF token for gated model pulls.
+    Priority: process env -> repo .env -> shared /dev/.env.
+    """
+    for key in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+        val = os.environ.get(key, "").strip()
+        if val:
+            return val
+
+    for env_file in (LOCAL_ENV_FILE, SHARED_ENV_FILE):
+        if not env_file.exists():
+            continue
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            if line.startswith("HF_TOKEN=") or line.startswith("HUGGING_FACE_HUB_TOKEN="):
+                _, raw = line.split("=", 1)
+                token = raw.strip()
+                if token:
+                    return token
+    return None
 
 
 # ── Stop ──────────────────────────────────────────────────────────────────────
