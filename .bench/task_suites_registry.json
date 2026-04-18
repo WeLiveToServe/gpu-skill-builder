@@ -1,0 +1,184 @@
+{
+  "suites": [
+    {
+      "suite_id": "medium60",
+      "target_difficulty_0_100": 60,
+      "source": ".bench/harness_benchmark.py",
+      "tasks": [
+        {
+          "task_id": "task1_longest_consecutive",
+          "title": "Longest Consecutive Sequence",
+          "difficulty_0_100": 58
+        },
+        {
+          "task_id": "task2_min_window",
+          "title": "Minimum Window Substring",
+          "difficulty_0_100": 62
+        },
+        {
+          "task_id": "task3_coin_change",
+          "title": "Minimum Coin Change",
+          "difficulty_0_100": 55
+        },
+        {
+          "task_id": "task4_topo_lexicographic",
+          "title": "Lexicographic Topological Sort",
+          "difficulty_0_100": 63
+        },
+        {
+          "task_id": "task5_timemap",
+          "title": "TimeMap Data Structure",
+          "difficulty_0_100": 60
+        }
+      ]
+    },
+    {
+      "suite_id": "hard80",
+      "target_difficulty_0_100": 80,
+      "source": ".bench/harness_benchmark_hard_opencode.py",
+      "tasks": [
+        {
+          "task_id": "hard1_sliding_window_median",
+          "title": "Sliding Window Median",
+          "difficulty_0_100": 80
+        },
+        {
+          "task_id": "hard2_trapping_rain_2d",
+          "title": "Trapping Rain Water II",
+          "difficulty_0_100": 82
+        },
+        {
+          "task_id": "hard3_shortest_superstring",
+          "title": "Shortest Superstring",
+          "difficulty_0_100": 84
+        },
+        {
+          "task_id": "hard4_lfu_cache",
+          "title": "LFU Cache",
+          "difficulty_0_100": 79
+        },
+        {
+          "task_id": "hard5_count_smaller",
+          "title": "Count of Smaller Numbers After Self",
+          "difficulty_0_100": 81
+        }
+      ]
+    },
+    {
+      "suite_id": "hard90",
+      "target_difficulty_0_100": 90,
+      "source": ".bench/harness_benchmark_hard90_opencode.py",
+      "tasks": [
+        {
+          "task_id": "hard90_sum_of_distances_tree",
+          "title": "Sum of Distances in Tree",
+          "difficulty_0_100": 90
+        },
+        {
+          "task_id": "hard90_merge_stones",
+          "title": "Minimum Cost to Merge Stones",
+          "difficulty_0_100": 91
+        },
+        {
+          "task_id": "hard90_count_range_sum",
+          "title": "Count of Range Sum",
+          "difficulty_0_100": 89
+        },
+        {
+          "task_id": "hard90_critical_pseudo_edges",
+          "title": "Critical and Pseudo-Critical Edges in MST",
+          "difficulty_0_100": 92
+        },
+        {
+          "task_id": "hard90_min_stickers",
+          "title": "Stickers to Spell Word",
+          "difficulty_0_100": 90
+        }
+      ]
+    },
+    {
+      "suite_id": "hard90_v2",
+      "target_difficulty_0_100": 90,
+      "source": ".bench/harness_benchmark_hard90_v2.py",
+      "tasks": [
+        {
+          "task_id": "hard90v2_max_flow_dinic",
+          "title": "Max Flow (Dinic)",
+          "difficulty_0_100": 92
+        },
+        {
+          "task_id": "hard90v2_min_cost_max_flow",
+          "title": "Min-Cost Max-Flow",
+          "difficulty_0_100": 95
+        },
+        {
+          "task_id": "hard90v2_2sat",
+          "title": "2-SAT Solver",
+          "difficulty_0_100": 91
+        },
+        {
+          "task_id": "hard90v2_count_distinct_substrings",
+          "title": "Count Distinct Substrings",
+          "difficulty_0_100": 90
+        },
+        {
+          "task_id": "hard90v2_longest_common_substring",
+          "title": "Longest Common Substring",
+          "difficulty_0_100": 90
+        },
+        {
+          "task_id": "hard90v2_kth_pair_distance",
+          "title": "K-th Smallest Pair Distance",
+          "difficulty_0_100": 90
+        },
+        {
+          "task_id": "hard90v2_smallest_sufficient_team",
+          "title": "Smallest Sufficient Team",
+          "difficulty_0_100": 90
+        },
+        {
+          "task_id": "hard90v2_cut_stick",
+          "title": "Minimum Cost to Cut a Stick",
+          "difficulty_0_100": 90
+        },
+        {
+          "task_id": "hard90v2_three_subarrays",
+          "title": "Max Sum of 3 Non-Overlapping Subarrays",
+          "difficulty_0_100": 90
+        },
+        {
+          "task_id": "hard90v2_median_stream",
+          "title": "Median Data Stream Processor",
+          "difficulty_0_100": 90
+        }
+      ]
+    },
+    {
+      "suite_id": "extreme100",
+      "target_difficulty_0_100": 100,
+      "source": ".bench/harness_benchmark_extreme100.py",
+      "tasks": [
+        {"task_id": "x100_01_max_flow_dinic", "title": "Max Flow Dinic", "difficulty_0_100": 100},
+        {"task_id": "x100_02_min_cost_max_flow", "title": "Min Cost Max Flow", "difficulty_0_100": 100},
+        {"task_id": "x100_03_2sat", "title": "2-SAT", "difficulty_0_100": 100},
+        {"task_id": "x100_04_shortest_superstring", "title": "Shortest Superstring", "difficulty_0_100": 100},
+        {"task_id": "x100_05_count_range_sum", "title": "Count Range Sum", "difficulty_0_100": 100},
+        {"task_id": "x100_06_merge_stones", "title": "Merge Stones", "difficulty_0_100": 100},
+        {"task_id": "x100_07_critical_pseudo", "title": "Critical/Pseudo MST Edges", "difficulty_0_100": 100},
+        {"task_id": "x100_08_sum_dist_tree", "title": "Sum Distances in Tree", "difficulty_0_100": 100},
+        {"task_id": "x100_09_min_stickers", "title": "Min Stickers", "difficulty_0_100": 100},
+        {"task_id": "x100_10_matrix_rank_transform", "title": "Matrix Rank Transform", "difficulty_0_100": 100},
+        {"task_id": "x100_11_remove_invalid_parentheses", "title": "Remove Invalid Parentheses", "difficulty_0_100": 100},
+        {"task_id": "x100_12_regex_match", "title": "Regex Match", "difficulty_0_100": 100},
+        {"task_id": "x100_13_wildcard_match", "title": "Wildcard Match", "difficulty_0_100": 100},
+        {"task_id": "x100_14_shortest_path_all_nodes", "title": "Shortest Path Visiting All Nodes", "difficulty_0_100": 100},
+        {"task_id": "x100_15_max_points_line", "title": "Max Points on a Line", "difficulty_0_100": 100},
+        {"task_id": "x100_16_kth_lex_number", "title": "Kth Lexicographical Number", "difficulty_0_100": 100},
+        {"task_id": "x100_17_strange_printer", "title": "Strange Printer", "difficulty_0_100": 100},
+        {"task_id": "x100_18_word_ladder_ii", "title": "Word Ladder II", "difficulty_0_100": 100},
+        {"task_id": "x100_19_split_array_largest_sum", "title": "Split Array Largest Sum", "difficulty_0_100": 100},
+        {"task_id": "x100_20_make_largest_island", "title": "Make Largest Island", "difficulty_0_100": 100}
+      ]
+    }
+  ]
+}

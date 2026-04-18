@@ -24,6 +24,13 @@ build/
 .DS_Store
 Thumbs.db
 
+# Benchmark artifacts — keep harness code and config, ignore run outputs
+.bench/benchmark-results/
+.bench/__pycache__/
+.bench/scratch/
+.bench/claude-debug.log
+.bench/suite_runs_*.json
+
 # Local runtime state / generated artifacts
 .do_state.json
 .modal_state.json

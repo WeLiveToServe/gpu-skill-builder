@@ -1,0 +1,48 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "doqwen": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "DO Qwen vLLM",
+      "options": {
+        "baseURL": "http://127.0.0.1:18000/v1",
+        "apiKey": "dummy"
+      },
+      "models": {
+        "q": {
+          "name": "Qwen2.5-7B-Instruct (alias)",
+          "tool_call": true,
+          "reasoning": false,
+          "temperature": true,
+          "limit": {
+            "context": 32768,
+            "output": 2048
+          }
+        },
+        "Qwen/Qwen2.5-7B-Instruct": {
+          "name": "Qwen2.5-7B-Instruct",
+          "tool_call": true,
+          "reasoning": false,
+          "temperature": true,
+          "limit": {
+            "context": 32768,
+            "output": 2048
+          }
+        },
+        "google/gemma-4-31B-it": {
+          "name": "Gemma 4 31B Instruct",
+          "tool_call": false,
+          "reasoning": false,
+          "temperature": true,
+          "limit": {
+            "context": 262144,
+            "output": 4096
+          }
+        }
+      }
+    }
+  },
+  "model": "doqwen/google/gemma-4-31B-it",
+  "small_model": "doqwen/google/gemma-4-31B-it",
+  "autoshare": false
+}
