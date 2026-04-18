@@ -1,31 +1,58 @@
 """
-MCP stdio server — exposes gpu_provision as a tool for Goose agents.
+MCP server — exposes gpu_provision as a tool for any MCP-compatible agent.
 
-Usage (standalone test):
-    echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | python goose_skill_server.py
+Transport modes:
+    stdio (default):
+        python goose_skill_server.py
+        python goose_skill_server.py --transport stdio
 
-Goose config snippet (~/.config/goose/config.yaml):
-    extensions:
-      gpu_provision:
-        type: stdio
-        cmd: python
-        args: ["C:/Users/keith/dev/gpu-skill-builder/goose_skill_server.py"]
-        envs: {}
+    HTTP/SSE (for remote agents or browser-based tools):
+        python goose_skill_server.py --transport sse --port 3333
+        python goose_skill_server.py --transport streamable-http --port 3333 --host 0.0.0.0
 
-When wired in, Goose agents can call gpu_provision to provision a GPU instance
-and immediately use the returned endpoint_url as an OpenAI-compatible backend.
+Standalone stdio test:
+    python - <<'EOF'
+    import subprocess, json
+    proc = subprocess.Popen(["python","goose_skill_server.py"], stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    proc.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+        "protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}
+    }}) + "\\n")
+    proc.stdin.write(json.dumps({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}) + "\\n")
+    proc.stdin.flush()
+    proc.stdout.readline()  # init response
+    proc.stdin.write(json.dumps({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}) + "\\n")
+    proc.stdin.flush()
+    print(proc.stdout.readline())
+    proc.terminate()
+    EOF
 """
 
+import argparse
 import sys
 import os
 
 # Ensure the project root is on the path so skill.py can be imported
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server.fastmcp import FastMCP
 from skill import run_skill_sync
 
-mcp = FastMCP("gpu-skill-builder")
+def _parse_args():
+    parser = argparse.ArgumentParser(description="gpu-skill-builder MCP server")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default="stdio",
+        help="Transport mode (default: stdio)",
+    )
+    parser.add_argument("--host", default="127.0.0.1", help="Host for HTTP transports (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=3333, help="Port for HTTP transports (default: 3333)")
+    # Only parse args when run as __main__; when imported by an MCP host (e.g. Claude Code)
+    # the host passes no args, so we fall back safely to defaults.
+    return parser.parse_args()
+
+mcp = FastMCP("gpu-skill-builder", host="127.0.0.1", port=3333)
 
 
 @mcp.tool()
@@ -80,4 +107,9 @@ def gpu_provision(
 
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    args = _parse_args()
+    if args.transport != "stdio":
+        # Rebuild mcp with the requested host/port before running HTTP transport
+        mcp.settings.host = args.host
+        mcp.settings.port = args.port
+    mcp.run(transport=args.transport)
