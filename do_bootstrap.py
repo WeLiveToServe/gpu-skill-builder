@@ -18,18 +18,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
 
+logger = logging.getLogger(__name__)
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 DO_API = "https://api.digitalocean.com/v2"
-ENV_FILE = Path("C:/Users/keith/dev/.env")
+ENV_FILE = Path.home() / "dev" / ".env"
 SSH_KEY_PATH = Path.home() / ".ssh" / "do_agent_ed25519"
 STATE_FILE = Path(__file__).parent / ".do_state.json"
 PROJECT_ID = "8513a898-7103-4d2f-a503-ffb24008e609"
@@ -68,7 +70,9 @@ def _load_state() -> dict:
 
 
 def _save_state(state: dict) -> None:
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+    tmp = STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2))
+    tmp.replace(STATE_FILE)
 
 
 # ── Token resolution ──────────────────────────────────────────────────────────
@@ -93,7 +97,7 @@ def resolve_token() -> str:
     raise RuntimeError(
         "No DigitalOcean token found.\n"
         "Run: doctl auth init\n"
-        "Or set DIGITALOCEAN_ACCESS_TOKEN in C:/Users/keith/dev/.env"
+        f"Or set DIGITALOCEAN_ACCESS_TOKEN in {ENV_FILE}"
     )
 
 
@@ -162,12 +166,16 @@ def ensure_ssh_key(token: str) -> int:
         return _register_key(token, state)
 
     # Key is missing or corrupt — full regeneration
-    print(f"SSH key at {SSH_KEY_PATH} is missing or corrupt. Regenerating...")
+    logger.warning("SSH key at %s is missing or corrupt. Regenerating...", SSH_KEY_PATH)
     _regenerate_keypair()
 
-    # Remove stale DO key if we have its ID or can find it by name
+    # Remove stale DO key if we have its ID or can find it by name.
+    # Clear key ID from state before deletion so that if _register_key() fails,
+    # state does not point at a deleted key on the next call.
     old_id = state.get("do_ssh_key_id") or _find_do_key_by_name(token, "do-agent-harness")
     if old_id:
+        state.pop("do_ssh_key_id", None)
+        _save_state(state)
         _delete_do_key(token, old_id)
 
     return _register_key(token, state)
@@ -191,10 +199,10 @@ def _regenerate_keypair() -> None:
 
     subprocess.run(
         ["ssh-keygen", "-t", "ed25519", "-f", str(SSH_KEY_PATH),
-         "-N", "", "-C", "keith@do-agent-harness"],
+         "-N", "", "-C", "agent@do-agent-harness"],
         check=True, capture_output=True
     )
-    print(f"New keypair written to {SSH_KEY_PATH}")
+    logger.info("New keypair written to %s", SSH_KEY_PATH)
 
 
 def _find_do_key_by_name(token: str, name: str) -> int | None:
@@ -232,7 +240,7 @@ def _register_key(token: str, state: dict) -> int:
     key_id = resp.json()["ssh_key"]["id"]
     state["do_ssh_key_id"] = key_id
     _save_state(state)
-    print(f"SSH key registered in DigitalOcean (ID: {key_id})")
+    logger.info("SSH key registered in DigitalOcean (ID: %d)", key_id)
     return key_id
 
 
@@ -251,7 +259,7 @@ def find_available_region(token: str, size_slug: str) -> str:
     for size in resp.json().get("sizes", []):
         if size["slug"] == size_slug and size.get("available") and size.get("regions"):
             region = size["regions"][0]
-            print(f"Region for {size_slug}: {region}")
+            logger.info("Region for %s: %s", size_slug, region)
             return region
 
     raise ValueError(
@@ -272,7 +280,7 @@ def find_existing_droplet(token: str, name: str) -> DropletInfo | None:
         if d["name"] == name and d["status"] in ("new", "active"):
             ip = _extract_ip(d)
             if ip:
-                print(f"Found existing droplet '{name}' (ID={d['id']}, IP={ip}). Reusing.")
+                logger.info("Found existing droplet '%s' (ID=%s, IP=%s). Reusing.", name, d["id"], ip)
                 return _to_info(d, ip)
     return None
 
@@ -302,7 +310,7 @@ async def create_droplet(
     region = find_available_region(token, size)
     tags = list(set(DEFAULT_TAGS + (extra_tags or []) + [size.split("-")[1]]))
 
-    print(f"Creating droplet '{name}' ({size} in {region})...")
+    logger.info("Creating droplet '%s' (%s in %s)...", name, size, region)
     resp = httpx.post(
         f"{DO_API}/droplets",
         headers=_headers(token),
@@ -324,7 +332,7 @@ async def create_droplet(
         )
 
     droplet_id = resp.json()["droplet"]["id"]
-    print(f"Droplet created (ID={droplet_id}). Polling for active state...")
+    logger.info("Droplet created (ID=%s). Polling for active state...", droplet_id)
 
     info = await _poll_until_active(token, droplet_id, name)
 
@@ -355,16 +363,16 @@ async def _poll_until_active(token: str, droplet_id: int, name: str) -> DropletI
                 )
 
             if resp.status_code != 200:
-                print(f"  [{elapsed}s] poll returned {resp.status_code}, retrying...")
+                logger.debug("  [%ds] poll returned %s, retrying...", elapsed, resp.status_code)
                 continue
 
             d = resp.json()["droplet"]
             status = d["status"]
             ip = _extract_ip(d)
-            print(f"  [{elapsed:>3}s] status={status}  ip={ip or 'pending'}")
+            logger.info("  [%3ds] status=%s  ip=%s", elapsed, status, ip or "pending")
 
             if status == "active" and ip:
-                print(f"\nDroplet '{name}' is active at {ip}")
+                logger.info("Droplet '%s' is active at %s", name, ip)
                 return _to_info(d, ip)
 
             if status == "errored":

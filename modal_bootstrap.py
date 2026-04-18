@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import subprocess
@@ -21,10 +22,12 @@ import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 LOCAL_ENV_FILE = Path(__file__).parent / ".env"
-SHARED_ENV_FILE = Path("C:/Users/keith/dev/.env")
+SHARED_ENV_FILE = Path.home() / "dev" / ".env"
 MODAL_APPS_DIR = Path(__file__).parent / "modal_apps"
 STATE_FILE = Path(__file__).parent / ".modal_state.json"
 
@@ -84,7 +87,9 @@ def _load_state() -> dict:
 
 
 def _save_state(state: dict) -> None:
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+    tmp = STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2))
+    tmp.replace(STATE_FILE)
 
 
 # ── Token resolution ──────────────────────────────────────────────────────────
@@ -113,7 +118,7 @@ def resolve_modal_env() -> dict[str, str]:
         raise RuntimeError(
             "Modal credentials not found.\n"
             "Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in gpu-skill-builder/.env\n"
-            "Or set them in C:/Users/keith/dev/.env\n"
+            f"Or set them in {SHARED_ENV_FILE}\n"
             "Or run: modal token set --token-id ak-... --token-secret as-..."
         )
 
@@ -264,14 +269,14 @@ async def deploy_vllm_app(
     state = _load_state()
     existing = state.get("apps", {}).get(app_name)
     if existing and existing.get("endpoint_url"):
-        print(f"Modal app '{app_name}' already deployed. Reusing.")
+        logger.info("Modal app '%s' already deployed. Reusing.", app_name)
         return ModalInstanceInfo(**existing)
 
-    print(f"Generating Modal app '{app_name}' ({gpu_slug}, {model})...")
+    logger.info("Generating Modal app '%s' (%s, %s)...", app_name, gpu_slug, model)
     hf_token = _resolve_hf_token()
     app_file = _generate_app_file(app_name, gpu_slug, model, hf_token=hf_token)
 
-    print("Deploying to Modal (this builds the container image on first run ~2-3 min)...")
+    logger.info("Deploying to Modal (builds container image on first run ~2-3 min)...")
     env = resolve_modal_env()
 
     # Force UTF-8 in the subprocess so Modal's emoji output doesn't crash on Windows cp1252
@@ -291,9 +296,8 @@ async def deploy_vllm_app(
             f"modal deploy failed (exit {proc.returncode}):\n{output}"
         )
 
-    # Safe print — Modal output contains emoji/box-drawing that cp1252 can't encode
     safe_output = output.encode("ascii", errors="replace").decode("ascii")
-    print(safe_output)
+    logger.info("modal deploy output:\n%s", safe_output)
 
     endpoint_url = _extract_endpoint_url(output)
     if not endpoint_url:
@@ -371,11 +375,16 @@ async def stop_app(app_name: str) -> None:
         raise RuntimeError(
             f"modal app stop failed: {stderr.decode()}"
         )
-    print(f"Stopped Modal app '{app_name}'")
+    logger.info("Stopped Modal app '%s'", app_name)
 
     state = _load_state()
     state.get("apps", {}).pop(app_name, None)
     _save_state(state)
+
+    app_file = MODAL_APPS_DIR / f"{app_name}.py"
+    if app_file.exists():
+        app_file.unlink()
+        logger.info("Removed generated app file: %s", app_file)
 
 
 # ── List ──────────────────────────────────────────────────────────────────────

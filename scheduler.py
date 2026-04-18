@@ -12,6 +12,7 @@ Jobs:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -20,6 +21,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from models import InstanceInfo, Provider
 
+logger = logging.getLogger(__name__)
 _scheduler = AsyncIOScheduler()
 
 
@@ -35,14 +37,14 @@ async def _destroy_instance(instance: InstanceInfo) -> None:
 
     provider_cls = PROVIDER_MAP.get(instance.provider)
     if not provider_cls:
-        print(f"[TTL] Unknown provider for '{instance.name}', skipping destroy.")
+        logger.warning("[TTL] Unknown provider for '%s', skipping destroy.", instance.name)
         return
 
     try:
         ok = await provider_cls().destroy_instance(instance.id)
-        print(f"[TTL] Auto-destroyed '{instance.name}': {'ok' if ok else 'FAILED'}")
+        logger.info("[TTL] Auto-destroyed '%s': %s", instance.name, "ok" if ok else "FAILED")
     except Exception as exc:
-        print(f"[TTL] Error destroying '{instance.name}': {exc}")
+        logger.error("[TTL] Error destroying '%s': %s", instance.name, exc)
 
 
 async def _report_uptime(instance: InstanceInfo) -> None:
@@ -54,12 +56,10 @@ async def _report_uptime(instance: InstanceInfo) -> None:
 
     try:
         current = await provider_cls().get_instance(instance.id)
-        print(
-            f"[Uptime] '{current.name}'  status={current.status}"
-            + (f"  url={current.endpoint_url}" if current.endpoint_url else "")
-        )
+        url_part = f"  url={current.endpoint_url}" if current.endpoint_url else ""
+        logger.info("[Uptime] '%s'  status=%s%s", current.name, current.status, url_part)
     except Exception as exc:
-        print(f"[Uptime] Could not fetch '{instance.name}': {exc}")
+        logger.warning("[Uptime] Could not fetch '%s': %s", instance.name, exc)
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ def schedule_ttl(instance: InstanceInfo, max_hours: int) -> None:
         id=f"ttl_{instance.id}",
         replace_existing=True,
     )
-    print(f"[Scheduler] TTL scheduled: '{instance.name}' → destroy at {destroy_at:%Y-%m-%d %H:%M:%S}")
+    logger.info("[Scheduler] TTL scheduled: '%s' → destroy at %s", instance.name, destroy_at.strftime("%Y-%m-%d %H:%M:%S"))
 
 
 def schedule_uptime_report(instance: InstanceInfo, interval_minutes: int) -> None:
@@ -88,7 +88,7 @@ def schedule_uptime_report(instance: InstanceInfo, interval_minutes: int) -> Non
         id=f"uptime_{instance.id}",
         replace_existing=True,
     )
-    print(f"[Scheduler] Uptime reporting every {interval_minutes}min for '{instance.name}'")
+    logger.info("[Scheduler] Uptime reporting every %dmin for '%s'", interval_minutes, instance.name)
 
 
 def cancel_instance_jobs(instance_id: str) -> None:
@@ -97,7 +97,7 @@ def cancel_instance_jobs(instance_id: str) -> None:
         job = _scheduler.get_job(job_id)
         if job:
             job.remove()
-            print(f"[Scheduler] Cancelled job '{job_id}'")
+            logger.info("[Scheduler] Cancelled job '%s'", job_id)
 
 
 def schedule_stuck_watchdog(provider_key: Provider, timeout_minutes: int, check_interval_minutes: int) -> None:
@@ -115,9 +115,9 @@ def schedule_stuck_watchdog(provider_key: Provider, timeout_minutes: int, check_
         args=[provider_key, timeout_minutes],
         id=job_id,
     )
-    print(
-        f"[Scheduler] Stuck-pending watchdog active for {provider_key.value} "
-        f"(timeout={timeout_minutes}min, checks every {check_interval_minutes}min)"
+    logger.info(
+        "[Scheduler] Stuck-pending watchdog active for %s (timeout=%dmin, checks every %dmin)",
+        provider_key.value, timeout_minutes, check_interval_minutes,
     )
 
 
@@ -135,7 +135,7 @@ async def reconcile_on_startup(provider_key: Provider, fallback_ttl_hours: int =
     try:
         instances = await provider.list_instances()
     except Exception as exc:
-        print(f"[Reconcile] Could not list {provider_key.value} instances: {exc}")
+        logger.warning("[Reconcile] Could not list %s instances: %s", provider_key.value, exc)
         return
 
     active_statuses = {"pending", "initializing", "running"}
@@ -144,7 +144,7 @@ async def reconcile_on_startup(provider_key: Provider, fallback_ttl_hours: int =
     if not orphans:
         return
 
-    print(f"[Reconcile] Found {len(orphans)} live instance(s) on startup — re-registering TTL jobs.")
+    logger.info("[Reconcile] Found %d live instance(s) on startup — re-registering TTL jobs.", len(orphans))
     for inst in orphans:
         # Only re-register if there is no existing TTL job (i.e. process was restarted)
         if _scheduler.get_job(f"ttl_{inst.id}"):
@@ -157,10 +157,9 @@ async def reconcile_on_startup(provider_key: Provider, fallback_ttl_hours: int =
             id=f"ttl_{inst.id}",
             replace_existing=True,
         )
-        print(
-            f"[Reconcile] Re-registered TTL for orphaned instance '{inst.name}' "
-            f"(status={inst.status}) → destroy at {destroy_at:%H:%M:%S} "
-            f"(fallback {fallback_ttl_hours}h from now)"
+        logger.info(
+            "[Reconcile] Re-registered TTL for orphaned instance '%s' (status=%s) → destroy at %s (fallback %dh from now)",
+            inst.name, inst.status, destroy_at.strftime("%H:%M:%S"), fallback_ttl_hours,
         )
 
 
@@ -173,7 +172,7 @@ async def _watchdog_stuck_pending(provider_key: Provider, timeout_minutes: int) 
     try:
         instances = await provider.list_instances()
     except Exception as exc:
-        print(f"[Watchdog] Could not list instances for {provider_key.value}: {exc}")
+        logger.warning("[Watchdog] Could not list instances for %s: %s", provider_key.value, exc)
         return
 
     now = datetime.now(tz=timezone.utc)
@@ -181,23 +180,25 @@ async def _watchdog_stuck_pending(provider_key: Provider, timeout_minutes: int) 
         if inst.status not in ("pending", "initializing"):
             continue
         if not inst.created_at:
+            logger.warning("[Watchdog] '%s' has no created_at timestamp — skipping.", inst.name)
             continue
         try:
             created = datetime.fromisoformat(inst.created_at.replace("Z", "+00:00"))
             age_minutes = (now - created).total_seconds() / 60
         except ValueError:
+            logger.warning("[Watchdog] Could not parse created_at for '%s': %s", inst.name, inst.created_at)
             continue
 
         if age_minutes >= timeout_minutes:
-            print(
-                f"[Watchdog] '{inst.name}' stuck in '{inst.status}' for {age_minutes:.0f}min "
-                f"(limit={timeout_minutes}min) — destroying."
+            logger.warning(
+                "[Watchdog] '%s' stuck in '%s' for %.0fmin (limit=%dmin) — destroying.",
+                inst.name, inst.status, age_minutes, timeout_minutes,
             )
             try:
                 await provider.destroy_instance(inst.id)
                 cancel_instance_jobs(inst.id)
             except Exception as exc:
-                print(f"[Watchdog] Failed to destroy '{inst.name}': {exc}")
+                logger.error("[Watchdog] Failed to destroy '%s': %s", inst.name, exc)
 
 
 def get_scheduler() -> AsyncIOScheduler:

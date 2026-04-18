@@ -18,12 +18,19 @@ Two modes:
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
+import logging
+
 import httpx
 
 from catalog import get_compatible_models
 from config import settings
 from models import GpuProvisionRequest, GpuProvisionResult, HardwareTier, InstanceInfo, ModelRecommendation, Provider
 from providers import PROVIDER_MAP
+from providers.base import classify_http_error
+
+logger = logging.getLogger(__name__)
 
 ACTIVE_STATUSES = {"pending", "initializing", "running", "deployed"}
 
@@ -31,7 +38,7 @@ ACTIVE_STATUSES = {"pending", "initializing", "running", "deployed"}
 # ── Interactive prompts ────────────────────────────────────────────────────────
 
 def _pick_provider() -> Provider:
-    options = [p for p in PROVIDER_MAP.keys() if p != Provider.OPENROUTER]
+    options = [p for p in PROVIDER_MAP.keys() if p not in (Provider.OPENROUTER, Provider.AMD)]
     print("\nGPU Providers:")
     for i, p in enumerate(options, 1):
         print(f"  {i}. {p.value}")
@@ -150,10 +157,11 @@ async def ensure_active_endpoint(result: GpuProvisionResult) -> GpuProvisionResu
     try:
         current = await provider_inst.get_instance(inst.id)
     except Exception as exc:
+        detail = classify_http_error(exc)
         return _fallback_result(
             instance_name=inst.name,
-            reason=f"{inst.provider.value} instance lookup failed ({exc})",
-            primary_provider_error=str(exc),
+            reason=f"{inst.provider.value} instance lookup failed: {detail}",
+            primary_provider_error=detail,
         )
 
     if current.status not in ACTIVE_STATUSES:
@@ -175,10 +183,11 @@ async def ensure_active_endpoint(result: GpuProvisionResult) -> GpuProvisionResu
                     primary_provider_error=f"http_status={resp.status_code}",
                 )
         except Exception as exc:
+            detail = classify_http_error(exc)
             return _fallback_result(
                 instance_name=inst.name,
-                reason=f"{inst.provider.value} endpoint health check error ({exc})",
-                primary_provider_error=str(exc),
+                reason=f"{inst.provider.value} endpoint health check error: {detail}",
+                primary_provider_error=detail,
             )
 
     return GpuProvisionResult(
@@ -217,6 +226,15 @@ async def run_skill(
     if agent_mode:
         try:
             provider_key = Provider(provider)
+            if provider_key == Provider.AMD:
+                return GpuProvisionResult(
+                    success=False,
+                    message=(
+                        "AMD / MI300X support is blocked pending DigitalOcean GPU account entitlement. "
+                        "No provider integration exists yet. "
+                        "Use 'modal' or 'huggingface' instead. See handoff-plan.md for status."
+                    ),
+                )
             if provider_key == Provider.OPENROUTER:
                 return _fallback_result(instance_name, "OpenRouter selected explicitly by caller.")
             hardware = await _resolve_hardware(provider_key, hardware_slug)
@@ -239,7 +257,7 @@ async def run_skill(
         if input("\nProceed? [y/N]: ").strip().lower() != "y":
             return GpuProvisionResult(success=False, message="Cancelled by user.")
 
-    # ── Guardrail 1: pre-flight cost estimate ─────────────────────────────────
+    # ── Guardrail 1: pre-flight cost estimate ──────────────────────────────────
     estimated_cost = max_hours * hardware.price_per_hour
     if estimated_cost > settings.max_spend_per_instance_usd:
         return GpuProvisionResult(
@@ -260,7 +278,7 @@ async def run_skill(
         # Idempotency: return the instance if it already exists and is active
         for inst in existing:
             if inst.name == instance_name and inst.status in ACTIVE_STATUSES:
-                print(f"[Guard] '{instance_name}' already exists (status={inst.status}) — returning it.")
+                logger.info("[Guard] '%s' already exists (status=%s) — returning it.", instance_name, inst.status)
                 return GpuProvisionResult(
                     success=True,
                     instance=inst,
@@ -279,8 +297,7 @@ async def run_skill(
                 ),
             )
     except Exception as exc:
-        # Non-fatal: log and continue rather than blocking on a list failure
-        print(f"[Guard] Could not check existing instances: {exc}")
+        logger.warning("[Guard] Could not check existing instances: %s", exc)
 
     # ── Provision ─────────────────────────────────────────────────────────────
     request = GpuProvisionRequest(
@@ -292,14 +309,15 @@ async def run_skill(
         max_deployment_hours=max_hours,
     )
 
-    print("\nProvisioning instance...")
+    logger.info("Provisioning instance '%s' on %s...", instance_name, provider_key.value)
     try:
         instance = await provider_inst.create_instance(request)
     except Exception as exc:
+        error_detail = classify_http_error(exc)
         return _fallback_result(
             instance_name=instance_name,
-            reason=f"{provider_key.value} provisioning failed ({exc})",
-            primary_provider_error=str(exc),
+            reason=f"{provider_key.value} provisioning failed: {error_detail}",
+            primary_provider_error=error_detail,
         )
 
     # Programmatic: schedule TTL + uptime + watchdog — never delegated to the LLM
@@ -311,9 +329,24 @@ async def run_skill(
         check_interval_minutes=settings.watchdog_check_interval_minutes,
     )
 
-    print(f"\nInstance '{instance.name}' created  [status: {instance.status}]")
+    logger.info("Instance '%s' created [status: %s]", instance.name, instance.status)
     if instance.endpoint_url:
-        print(f"Endpoint URL : {instance.endpoint_url}")
+        logger.info("Endpoint URL: %s", instance.endpoint_url)
 
     result = GpuProvisionResult(success=True, instance=instance, message="Instance created successfully.")
     return await ensure_active_endpoint(result)
+
+
+def run_skill_sync(**kwargs) -> GpuProvisionResult:
+    """
+    Sync wrapper for run_skill(). Safe to call from both sync and async contexts.
+    If an event loop is already running (FastAPI, Jupyter), spawns a thread to avoid
+    'asyncio.run() cannot be called from a running event loop'.
+    """
+    try:
+        asyncio.get_running_loop()
+        # Already inside an event loop — run in a thread with its own loop
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, run_skill(**kwargs)).result()
+    except RuntimeError:
+        return asyncio.run(run_skill(**kwargs))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -7,8 +8,14 @@ from dotenv import dotenv_values
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 LOCAL_ENV_FILE = Path(__file__).parent / ".env"
-SHARED_ENV_FILE = Path("C:/Users/keith/dev/.env")
+SHARED_ENV_FILE = Path.home() / "dev" / ".env"
 
 
 def _seed_environment() -> None:
