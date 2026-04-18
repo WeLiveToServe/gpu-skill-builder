@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gpu-skill-builder": {
+      "command": "python",
+      "args": ["C:/Users/keith/dev/gpu-skill-builder/goose_skill_server.py"]
+    }
+  }
+}
