@@ -30,7 +30,10 @@ OPENCODE_CLI = os.environ.get("BENCH_OPENCODE_CLI", str(NPM_BIN_DIR / "opencode.
 CODEX_CLI = os.environ.get("BENCH_CODEX_CLI", str(NPM_BIN_DIR / "codex.cmd"))
 CLAUDE_CLI = os.environ.get("BENCH_CLAUDE_CLI", str(NPM_BIN_DIR / "claude.cmd"))
 
-HARNESS_ORDER = ["qwen", "opencode", "codex", "claude"]
+GOOSE_CLI = os.environ.get("BENCH_GOOSE_CLI", str(Path.home() / ".local" / "bin" / "goose"))
+GOOSE_MODEL = os.environ.get("BENCH_GOOSE_MODEL", "q")
+
+HARNESS_ORDER = ["qwen", "opencode", "codex", "claude", "goose"]
 
 
 def run_cmd(
@@ -448,6 +451,29 @@ def run_claude(prompt: str, timeout_s: int = 300) -> Dict[str, Any]:
     return out
 
 
+def run_goose(prompt: str, timeout_s: int = 300) -> Dict[str, Any]:
+    env = os.environ.copy()
+    # Goose reads OPENAI_HOST for the base URL (no /v1 suffix)
+    env["OPENAI_API_KEY"] = "dummy"
+    env["OPENAI_HOST"] = OPENAI_BASE_URL.removesuffix("/v1")
+    env["GOOSE_PROVIDER"] = "openai"
+    env["GOOSE_MODEL"] = GOOSE_MODEL
+    env["GOOSE_SKIP_TELEMETRY"] = "true"
+    cmd = [
+        GOOSE_CLI,
+        "run",
+        "--no-session",
+        "--text",
+        prompt,
+        "--quiet",
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        out = run_cmd(cmd, env, timeout_s, cwd=tmp)
+    response = strip_ansi(out["stdout"]).strip()
+    out["response_text"] = response
+    return out
+
+
 def run_harness(harness: str, prompt: str, codex_result_file: Path) -> Dict[str, Any]:
     if harness == "qwen":
         return run_qwen(prompt)
@@ -457,6 +483,8 @@ def run_harness(harness: str, prompt: str, codex_result_file: Path) -> Dict[str,
         return run_codex(prompt, codex_result_file)
     if harness == "claude":
         return run_claude(prompt)
+    if harness == "goose":
+        return run_goose(prompt)
     raise ValueError(f"Unknown harness: {harness}")
 
 

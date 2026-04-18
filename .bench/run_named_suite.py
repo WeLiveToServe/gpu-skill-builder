@@ -112,7 +112,7 @@ def _run_suite(suite_id: str, harness: str, timeout_s: int = 600) -> Dict[str, A
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run one or more named benchmark suites for a single harness.")
-    parser.add_argument("--harness", required=True, choices=["qwen", "opencode", "codex", "claude"])
+    parser.add_argument("--harness", required=True, choices=["qwen", "opencode", "codex", "claude", "goose"])
     parser.add_argument("--suites", required=True, help="Comma-separated suite IDs (e.g., medium60,hard80,hard90).")
     parser.add_argument("--timeout-s", type=int, default=600)
     parser.add_argument("--ledger", default="", help="Optional path to write a JSON run ledger.")
