@@ -7,3 +7,9 @@ Current state:
 
 What this folder is for:
 - VastAI instance launch and model endpoint playbooks.
+
+Coding harness advice:
+- `opencode`: not yet validated; expected path is OpenAI-compatible endpoint registration plus coding session smoke tests.
+- `qwen-code`: not yet validated against VastAI.
+- `codex-open-source`: not yet validated against VastAI.
+- `claude-open-source`: not yet validated against VastAI.

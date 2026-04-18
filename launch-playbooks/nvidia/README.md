@@ -19,3 +19,13 @@ Direct endpoint vs coding harness notes:
 
 Runbooks:
 - `NVIDIA_ENDPOINT_NEMOTRON_PLAYBOOK.md`: exact endpoint validation and Nemotron invocation procedure (PowerShell + Bash), including observed success/failure cases.
+
+Coding harness advice:
+- `opencode`:
+  - Status: validated end-to-end with NVIDIA provider wiring in harness.
+  - Reliable baseline in this repo cycle: `nvidia-direct/meta/llama-3.1-8b-instruct`.
+  - Mixed quality model tested: `nvidia-direct/nemotron-3-super-120b-a12b` (unstable on some coding prompts).
+  - Common pitfall: missing `Authorization` header if API key is not correctly bound in harness provider config.
+- `qwen-code`: not yet validated against NVIDIA from this repo.
+- `codex-open-source`: not yet validated against NVIDIA from this repo.
+- `claude-open-source`: not yet validated against NVIDIA from this repo.

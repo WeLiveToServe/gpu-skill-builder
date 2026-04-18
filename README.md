@@ -1,8 +1,13 @@
 # gpu-skill-builder
 
-A reusable, agent-callable skill for provisioning GPU cloud instances and loading
-open-source models onto them. Works standalone (interactive CLI) or as a Python
-library called by an orchestrating LLM agent.
+A reusable, agent-callable skill whose core purpose is to:
+1. Provision a GPU from multiple providers.
+2. Load an open-source model that fits the selected GPU.
+3. Wire the resulting model endpoint into open-source coding harnesses with correct API configuration.
+
+Works standalone (interactive CLI) or as a Python library called by an orchestrating LLM agent.
+
+> Maintainer directive: The core purpose above is stable and must not be changed by agents unless the repo owner explicitly directs that change. Development stage details, supported providers, and coding-harness availability can be updated over time.
 
 ---
 
@@ -16,8 +21,8 @@ model, and it creates a live inference endpoint with:
 - a stuck-pending watchdog (kills instances that never reach `running`)
 - cost, concurrency, and idempotency guardrails to prevent runaway spend
 
-The endpoint it creates is OpenAI-compatible, so any harness that can talk to the
-OpenAI chat completions API can use it immediately after provision.
+The endpoint it creates is OpenAI-compatible, so it can be wired directly into
+open-source coding harnesses that support OpenAI chat completions style APIs.
 
 ---
 
@@ -135,7 +140,7 @@ immediately on a name collision, making repeat calls safe.
 | Provider | Status | Notes |
 |---|---|---|
 | HuggingFace | Ready | Uses HF Inference Endpoints API v2. Endpoint is OpenAI-compatible. Requires payment method on account. |
-| DigitalOcean | Ready (secondary) | H200 GPU (`gpu-h200x1-141gb`) in `atl1` confirmed working. SSH key: `codex-do-oci-ampere`. |
+| DigitalOcean | Ready (secondary) | H200 GPU (`gpu-h200x1-141gb`) in `atl1` confirmed working. Deterministic vLLM model swap script: `launch-playbooks/digitalocean/swap-vllm-model.ps1`. |
 | Modal | Ready | Deploys an OpenAI-compatible vLLM app endpoint via `modal deploy`. |
 | OpenRouter | Fallback lane | OpenAI-compatible serverless fallback when GPU path fails or later becomes unhealthy. |
 | AMD / MI300X | Blocked | DO account has $200 AMD credits but AMD GPU entitlement not enabled on the backend. Needs DO support ticket. See `human-amd-credits-use.md`. |
@@ -259,6 +264,12 @@ Models are matched to hardware by VRAM. Only models verified to fit are shown.
 See [h200-Qwen3.6-35B-A3B-text-only-droplet-optimization.txt](h200-Qwen3.6-35B-A3B-text-only-droplet-optimization.txt).
 This includes advanced vLLM flags for ACP (Automatic Compression Pooling), KV cache management, and monitoring guidance.
 
+For deterministic model cutovers on an existing DO droplet, use:
+
+```powershell
+.\launch-playbooks\digitalocean\swap-vllm-model.ps1 -HostIp <DROPLET_IP> -ModelId google/gemma-4-31B-it
+```
+
 ## Adding a provider
 
 1. Create `providers/<name>_provider.py` inheriting `GpuProvider` from `providers/base.py`
@@ -273,8 +284,10 @@ See `providers/hf_provider.py` as the reference implementation.
 
 ## What is not done yet
 
-- Post-provision health probe (confirm inference responds after `running`)
-- Cross-session spend tracking (current cost cap is per-instance, not cumulative)
-- Model deployment step for DO droplets (SSH in, install vLLM, load model)
-- AMD provider (blocked on DO support — see `human-amd-credits-use.md`)
-- Multi-provider parallel availability check
+- **Post-provision health probe** — instance status shows `running` before the model finishes loading; no wait-for-ready loop exists yet
+- **Cross-session spend tracking** — cost cap is per-instance only; no cumulative budget guard across multiple instances
+- **Model deployment inside `run_skill` for DO droplets** — `digitalocean` provider still creates compute only; deterministic serving cutover is currently handled by `launch-playbooks/digitalocean/swap-vllm-model.ps1`
+- **AMD / MI300X provider** — blocked on DigitalOcean account GPU entitlement; passing `provider="amd"` returns a clear error message (see `human-amd-credits-use.md`)
+- **Multi-provider parallel availability check** — no fallback to a second GPU provider if the first has no capacity
+- **ThunderCompute / Vast.ai / NVIDIA providers** — accounts and credentials in place; Python provider classes not yet written
+- **Unit test coverage** — test suite exists (`tests/`) covering guardrails, model validation, state serialization, and config loading; provider integration tests require live API access and are not yet written

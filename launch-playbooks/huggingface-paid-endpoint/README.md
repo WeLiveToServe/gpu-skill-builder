@@ -8,3 +8,9 @@ Current state:
 
 What this folder is for:
 - Paid HF endpoint provisioning, auth, and endpoint test playbooks.
+
+Coding harness advice:
+- `opencode`: not yet validated against HF paid endpoints in this repo cycle.
+- `qwen-code`: not yet validated against HF paid endpoints.
+- `codex-open-source`: not yet validated against HF paid endpoints.
+- `claude-open-source`: not yet validated against HF paid endpoints.

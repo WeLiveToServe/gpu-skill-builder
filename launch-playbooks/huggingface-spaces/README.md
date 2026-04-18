@@ -8,3 +8,9 @@ Current state:
 
 What this folder is for:
 - Spaces deployment and endpoint validation runbooks.
+
+Coding harness advice:
+- `opencode`: not yet validated against HF Spaces in this repo cycle.
+- `qwen-code`: not yet validated against HF Spaces.
+- `codex-open-source`: not yet validated against HF Spaces.
+- `claude-open-source`: not yet validated against HF Spaces.

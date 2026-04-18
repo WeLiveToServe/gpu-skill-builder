@@ -46,14 +46,25 @@ The user confirms before any resources are created.
 | Uptime reporting | `scheduler.schedule_uptime_report()` — APScheduler IntervalTrigger |
 | Retry on API failure | `tenacity` decorators on provider methods |
 | Model ↔ VRAM matching | `catalog.get_compatible_models()` — static lookup table |
-| Credentials | `pydantic-settings` — local `gpu-skill-builder/.env` first, then `C:/Users/keith/dev/.env` |
+| Credentials | `pydantic-settings` — local `gpu-skill-builder/.env` first, then `~/dev/.env` |
 
 ## Supported providers
 
 | Provider | Status | Notes |
 |---|---|---|
-| `huggingface` | POC ready | Uses HF Inference Endpoints API v2 |
-| `digitalocean` | Stub ready | Requires `DIGITALOCEAN_TOKEN` and SSH key `codex-do-oci-ampere` |
+| `huggingface` | Ready | HF Inference Endpoints API v2; tested with T4/A10G/A100 |
+| `digitalocean` | Ready (manual deploy lane) | Creates droplet via provider flow; deterministic model swap/run on existing droplet via `launch-playbooks/digitalocean/swap-vllm-model.ps1` |
+| `modal` | Ready | vLLM on H100/H200/B200; tested end-to-end with Qwen3-8B |
+| `openrouter` | Fallback only | Auto-activated when GPU path fails; no provisioning |
+| `amd` | Blocked | AMD MI300X blocked on DO account entitlement — returns clear error |
+
+## DigitalOcean deterministic model serving
+
+When the user asks to swap the model on an existing DO droplet:
+
+1. Run `launch-playbooks/digitalocean/swap-vllm-model.ps1` with `-HostIp`, `-ModelId`, and `-SshKeyPath`.
+2. The script enforces stop -> rewrite `vllm.service` -> restart -> health check -> `/v1/models` validation.
+3. After swap, verify one `POST /v1/chat/completions` call before handing back endpoint details.
 
 ## Adding a provider
 

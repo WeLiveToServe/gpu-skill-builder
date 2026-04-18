@@ -18,3 +18,12 @@ Direct endpoint vs coding harness notes:
 
 Runbooks:
 - `H100_GPT_OSS_120B_DEPLOY_LOG.md`: full command log for H100 + `openai/gpt-oss-120b` deployment attempt.
+
+Coding harness advice:
+- `opencode`:
+  - Status: validated when pointed at a healthy Modal endpoint.
+  - Best known in this repo cycle: `Qwen/Qwen3-8B` worked for connectivity and task execution.
+  - Known failure mode: if model boot fails (for example `gpt-oss-120b` OOM/unhealthy), harness requests fail too.
+- `qwen-code`: not yet validated against Modal from this repo.
+- `codex-open-source`: not yet validated against Modal from this repo.
+- `claude-open-source`: not yet validated against Modal from this repo.
