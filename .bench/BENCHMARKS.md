@@ -10,6 +10,7 @@ Evaluates four CLI agents (claude, codex, opencode, qwen) against Python coding 
 | `codex` | codex | OpenAI-compatible (responses API) |
 | `opencode` | opencode | OpenAI-compatible (pure mode) |
 | `qwen` | qwen-code | OpenAI-compatible (JSON output) |
+| `goose` | goose | OpenAI-compatible via `OPENAI_HOST` + `--quiet` |
 
 ## Task Suites
 
@@ -38,6 +39,18 @@ export BENCH_CLAUDE_CLI=/path/to/claude.cmd
 export BENCH_CODEX_CLI=/path/to/codex.cmd
 export BENCH_OPENCODE_CLI=/path/to/opencode.cmd
 export BENCH_QWEN_CLI=/path/to/qwen.cmd
+
+# Goose runner (install binary first: run download_cli.ps1 in goose repo)
+# Defaults to ~/.local/bin/goose (or goose.exe on Windows)
+export BENCH_GOOSE_CLI=~/.local/bin/goose
+export BENCH_GOOSE_MODEL=<model-id>   # same model ID as other runners
+```
+
+**Goose binary:** Install from the goose repo before using the goose harness:
+```powershell
+# In C:/Users/keith/dev/goose/
+.\download_cli.ps1
+# Installs to %USERPROFILE%\.local\bin\goose.exe
 ```
 
 ## Running
@@ -56,7 +69,7 @@ python run_named_suite.py --harness codex --suites medium60,hard80,hard90 \
 
 **Full matrix (all agents × all suites)** — run once per harness:
 ```bash
-for h in claude codex opencode qwen; do
+for h in claude codex opencode qwen goose; do
   python run_named_suite.py --harness $h --suites medium60,hard80,hard90,extreme100 \
     --ledger suite_runs_${h}_latest.json
 done
