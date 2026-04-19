@@ -11,7 +11,9 @@ class TestSharedEnvPath:
         import config
         # Must be relative to home, not an absolute Windows path
         assert str(config.SHARED_ENV_FILE).startswith(str(Path.home()))
-        assert "keith" not in str(config.SHARED_ENV_FILE)
+        # Guard against a literal hardcoded username only when it is not the actual home user.
+        if "keith" not in str(Path.home()).lower():
+            assert "keith" not in str(config.SHARED_ENV_FILE).lower()
 
     def test_shared_env_ends_with_dev_dot_env(self):
         import config
