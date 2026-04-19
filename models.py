@@ -58,9 +58,9 @@ class GpuProvisionRequest(BaseModel):
     @field_validator("instance_name")
     @classmethod
     def validate_instance_name(cls, v: str) -> str:
-        if not re.match(r'^[a-z0-9][a-z0-9\-]{1,48}[a-z0-9]$', v):
+        if not re.match(r'^[a-z0-9][a-z0-9\-]{0,48}[a-z0-9]$', v):
             raise ValueError(
-                f"instance_name '{v}' must be 3-50 chars, lowercase alphanumeric and hyphens only, "
+                f"instance_name '{v}' must be 2-50 chars, lowercase alphanumeric and hyphens only, "
                 "cannot start or end with a hyphen"
             )
         return v

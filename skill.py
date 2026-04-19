@@ -319,6 +319,15 @@ async def run_skill(
             reason=f"{provider_key.value} provisioning failed: {error_detail}",
             primary_provider_error=error_detail,
         )
+    try:
+        instance = InstanceInfo.model_validate(instance)
+    except Exception as exc:
+        return GpuProvisionResult(
+            success=False,
+            message=(
+                f"{provider_key.value} provider returned invalid instance payload: {exc}"
+            ),
+        )
 
     # Programmatic: schedule TTL + uptime + watchdog — never delegated to the LLM
     schedule_ttl(instance, max_hours)
