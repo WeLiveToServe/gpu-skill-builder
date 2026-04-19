@@ -1,0 +1,20 @@
+# Enable monitor subsystem
+GPU_MONITOR_ENABLED=true
+GPU_MONITOR_INTERVAL_MINUTES=5
+GPU_MONITOR_RUNTIME_ALERT_MINUTES=120
+GPU_MONITOR_AUTO_STOP_MINUTES=0
+
+# Telegram (required for alerts)
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+
+# Provider credentials used by monitor pollers
+HF_TOKEN=
+DIGITALOCEAN_ACCESS_TOKEN=
+MODAL_TOKEN_ID=
+MODAL_TOKEN_SECRET=
+
+# Optional fallback provider vars (not required for monitor itself)
+OPENROUTER_API_KEY=
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=openrouter/auto

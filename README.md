@@ -190,6 +190,12 @@ MODAL_TOKEN_SECRET=as-...               # Modal token secret
 OPENROUTER_API_KEY=sk-or-...            # OpenRouter fallback provider
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_MODEL=openrouter/auto
+TELEGRAM_BOT_TOKEN=123456:ABC...        # Telegram alert bot token
+TELEGRAM_CHAT_ID=123456789              # Target user/group chat id
+GPU_MONITOR_ENABLED=false               # Set true on always-on monitor host
+GPU_MONITOR_INTERVAL_MINUTES=5          # Poll cadence across providers
+GPU_MONITOR_RUNTIME_ALERT_MINUTES=120   # Alert once when runtime crosses threshold
+GPU_MONITOR_AUTO_STOP_MINUTES=0         # 0 disables auto-stop; >0 enforces hard stop
 ```
 
 The settings loader checks env sources in this order:
@@ -213,6 +219,44 @@ MODAL_TOKEN_SECRET=
 OPENROUTER_API_KEY=
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_MODEL=openrouter/auto
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+GPU_MONITOR_ENABLED=false
+GPU_MONITOR_INTERVAL_MINUTES=5
+GPU_MONITOR_RUNTIME_ALERT_MINUTES=120
+GPU_MONITOR_AUTO_STOP_MINUTES=0
+```
+
+### Always-on fleet monitor (EC2 relay)
+
+To run provider-wide GPU monitoring independent of your local machine:
+
+```bash
+python gpu_monitor_daemon.py
+```
+
+Behavior:
+- Polls Hugging Face, Modal, and DigitalOcean for active instances.
+- Sends Telegram notifications for new instances, status changes, failures, and disappearances.
+- Optional runtime threshold alert and optional hard auto-stop enforcement.
+- Persists monitor state in `.do_state.json` under `gpu_monitor`.
+
+### Oracle host deployment helper
+
+If you have an always-on Oracle Linux VM, use:
+
+```powershell
+.\scripts\monitor\bootstrap_oracle_monitor.ps1 -HostIp <PUBLIC_IP>
+```
+
+Then on the VM:
+
+```bash
+cp /opt/gpu-skill-builder/scripts/monitor/monitor_env.example /opt/gpu-skill-builder/.env
+# edit /opt/gpu-skill-builder/.env with Telegram + provider credentials
+sudo bash /opt/gpu-skill-builder/scripts/monitor/install_monitor_service.sh \
+  --repo-dir /opt/gpu-skill-builder \
+  --env-file /opt/gpu-skill-builder/.env
 ```
 
 Share this template with future users and have each user fill values locally.
@@ -286,7 +330,6 @@ See `providers/hf_provider.py` as the reference implementation.
 
 - **Post-provision health probe** — instance status shows `running` before the model finishes loading; no wait-for-ready loop exists yet
 - **Cross-session spend tracking** — cost cap is per-instance only; no cumulative budget guard across multiple instances
-- **Model deployment inside `run_skill` for DO droplets** — `digitalocean` provider still creates compute only; deterministic serving cutover is currently handled by `launch-playbooks/digitalocean/swap-vllm-model.ps1`
 - **AMD / MI300X provider** — blocked on DigitalOcean account GPU entitlement; passing `provider="amd"` returns a clear error message (see `human-amd-credits-use.md`)
 - **Multi-provider parallel availability check** — no fallback to a second GPU provider if the first has no capacity
 - **ThunderCompute / Vast.ai / NVIDIA providers** — accounts and credentials in place; Python provider classes not yet written

@@ -175,7 +175,7 @@ def _generate_app_file(app_name: str, gpu_slug: str, model_id: str, hf_token: st
             gpu="{gpu_slug}",
             image=vllm_image,
             timeout=3600,
-            min_containers=1,
+            min_containers=0,
 {secret_block}
         )
         @modal.concurrent(max_inputs=100)
@@ -441,3 +441,4 @@ async def _lookup_endpoint_url(app_name: str, env: dict) -> str | None:
         pass
 
     return None
+

@@ -20,6 +20,7 @@ from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from models import InstanceInfo, Provider
+from monitor import run_monitor_once
 
 logger = logging.getLogger(__name__)
 _scheduler = AsyncIOScheduler()
@@ -118,6 +119,34 @@ def schedule_stuck_watchdog(provider_key: Provider, timeout_minutes: int, check_
     logger.info(
         "[Scheduler] Stuck-pending watchdog active for %s (timeout=%dmin, checks every %dmin)",
         provider_key.value, timeout_minutes, check_interval_minutes,
+    )
+
+
+def schedule_fleet_monitoring(
+    interval_minutes: int,
+    runtime_alert_minutes: int,
+    auto_stop_minutes: int,
+) -> None:
+    """
+    Register periodic cross-provider fleet monitoring with Telegram alerts.
+    Safe to call repeatedly; only one monitor job is kept.
+    """
+    _ensure_started()
+    job_id = "fleet_monitor"
+    if _scheduler.get_job(job_id):
+        return
+    _scheduler.add_job(
+        run_monitor_once,
+        trigger=IntervalTrigger(minutes=interval_minutes),
+        kwargs={
+            "runtime_alert_minutes": runtime_alert_minutes,
+            "auto_stop_minutes": auto_stop_minutes,
+        },
+        id=job_id,
+    )
+    logger.info(
+        "[Scheduler] Fleet monitor active (interval=%dmin runtime_alert=%dmin auto_stop=%dmin)",
+        interval_minutes, runtime_alert_minutes, auto_stop_minutes,
     )
 
 

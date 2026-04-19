@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     modal_token_secret: str = Field(default="", alias="MODAL_TOKEN_SECRET")
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
+    telegram_chat_id: str = Field(default="", alias="TELEGRAM_CHAT_ID")
 
     # OpenAI-compatible OpenRouter endpoint config (provider-specific names prevent OPENAI_API_KEY collisions).
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
@@ -67,6 +69,12 @@ class Settings(BaseSettings):
     max_concurrent_instances: int = 2
     stuck_pending_minutes: int = 15
     watchdog_check_interval_minutes: int = 5
+
+    # Fleet monitoring / alerting
+    monitor_enabled: bool = Field(default=False, alias="GPU_MONITOR_ENABLED")
+    monitor_interval_minutes: int = Field(default=5, alias="GPU_MONITOR_INTERVAL_MINUTES")
+    monitor_runtime_alert_minutes: int = Field(default=120, alias="GPU_MONITOR_RUNTIME_ALERT_MINUTES")
+    monitor_auto_stop_minutes: int = Field(default=0, alias="GPU_MONITOR_AUTO_STOP_MINUTES")
 
     model_config = SettingsConfigDict(
         extra="ignore",

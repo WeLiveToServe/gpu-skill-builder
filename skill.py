@@ -218,7 +218,12 @@ async def run_skill(
     Agent mode:   pass provider + hardware_slug + model_repo_id — no prompts.
     Interactive:  omit those three — presents selection menus and confirmation.
     """
-    from scheduler import schedule_ttl, schedule_uptime_report, schedule_stuck_watchdog
+    from scheduler import (
+        schedule_fleet_monitoring,
+        schedule_ttl,
+        schedule_uptime_report,
+        schedule_stuck_watchdog,
+    )
 
     max_hours = max_deployment_hours or settings.max_deployment_hours
     agent_mode = all(x is not None for x in (provider, hardware_slug, model_repo_id))
@@ -337,6 +342,12 @@ async def run_skill(
         timeout_minutes=settings.stuck_pending_minutes,
         check_interval_minutes=settings.watchdog_check_interval_minutes,
     )
+    if settings.monitor_enabled:
+        schedule_fleet_monitoring(
+            interval_minutes=settings.monitor_interval_minutes,
+            runtime_alert_minutes=settings.monitor_runtime_alert_minutes,
+            auto_stop_minutes=settings.monitor_auto_stop_minutes,
+        )
 
     logger.info("Instance '%s' created [status: %s]", instance.name, instance.status)
     if instance.endpoint_url:
