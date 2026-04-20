@@ -34,11 +34,21 @@ def strip_v1(url: str) -> str:
     return u
 
 
-def resolve_openrouter_model() -> str:
-    configured = (settings.openrouter_model or "").strip()
-    if not configured or configured == "openrouter/auto":
-        return DEFAULT_OPENROUTER_MODEL
-    return configured
+def _strip_openrouter_prefix(model: str) -> str:
+    m = model.strip()
+    if m.startswith("openrouter/"):
+        return m[len("openrouter/"):]
+    return m
+
+
+def resolve_locked_model(requested_model: str = "") -> str:
+    normalized = _strip_openrouter_prefix(requested_model)
+    if normalized and normalized != DEFAULT_OPENROUTER_MODEL:
+        raise RuntimeError(
+            f"Model override '{requested_model}' is not allowed. "
+            f"This launcher is locked to '{DEFAULT_OPENROUTER_MODEL}'."
+        )
+    return DEFAULT_OPENROUTER_MODEL
 
 
 def openrouter_target() -> LaunchTarget:
@@ -49,7 +59,7 @@ def openrouter_target() -> LaunchTarget:
     return LaunchTarget(
         provider_name="openrouter",
         base_url=normalize_base_url(settings.openrouter_base_url),
-        model=resolve_openrouter_model(),
+        model=DEFAULT_OPENROUTER_MODEL,
         env_key_name="OPENROUTER_API_KEY",
         env_key_value=settings.openrouter_api_key,
     )

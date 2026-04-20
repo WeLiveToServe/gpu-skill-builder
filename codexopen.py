@@ -2,11 +2,8 @@
 """
 codexopen: Launch Codex routed to OpenRouter.
 
-NOTE: Codex v0.115+ removed wire_api="chat" support. Only wire_api="responses"
-is supported, which is incompatible with OpenRouter's tool-type requirements
-(openrouter:web_search, openrouter:datetime, etc.). This wrapper will likely
-fail on first turn until Codex adds a way to disable built-in Responses tools
-or OpenRouter relaxes its tool-type validation.
+This wrapper enforces OpenRouter compatibility mode by disabling Codex features
+that inject incompatible Responses tool payloads.
 """
 
 from __future__ import annotations
@@ -17,14 +14,22 @@ import shlex
 import sys
 from pathlib import Path
 
-from open_harness_common import LaunchTarget, openrouter_target, run_interactive
+from open_harness_common import LaunchTarget, openrouter_target, resolve_locked_model, run_interactive
+
+COMPAT_DISABLE_FEATURES = [
+    "apps",
+    "plugins",
+    "personality",
+    "multi_agent",
+    "skill_mcp_dependency_install",
+    "tool_suggest",
+    "workspace_dependencies",
+]
 
 
-def _build_codex_cmd(target: LaunchTarget, cwd: str, model_override: str | None) -> list[str]:
-    model = model_override or target.model
+def _build_codex_cmd(target: LaunchTarget, cwd: str, model: str, passthrough: list[str]) -> list[str]:
     provider_id = "relay"
-
-    return [
+    cmd = [
         "codex",
         "-c",
         f'model="{model}"',
@@ -41,32 +46,39 @@ def _build_codex_cmd(target: LaunchTarget, cwd: str, model_override: str | None)
         "-C",
         cwd,
     ]
+    for feature in COMPAT_DISABLE_FEATURES:
+        cmd.extend(["--disable", feature])
+    if passthrough:
+        cmd.extend(passthrough)
+    return cmd
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Launch Codex routed to OpenRouter.")
-    parser.add_argument("--model", default="", help="Optional model override.")
+    parser.add_argument("--model", default="", help="Ignored unless set to locked model qwen/qwen3.6-plus.")
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print resolved target and Codex command without launching.",
     )
-    args = parser.parse_args()
+    args, passthrough = parser.parse_known_args()
 
     try:
         target = openrouter_target()
+        model = resolve_locked_model(args.model)
     except Exception as exc:
         print(f"[codexopen] {exc}", file=sys.stderr)
         return 1
 
     cwd = str(Path.cwd())
-    cmd = _build_codex_cmd(target, cwd, args.model.strip() or None)
+    cmd = _build_codex_cmd(target, cwd, model, passthrough)
 
     env = os.environ.copy()
     env[target.env_key_name] = target.env_key_value
 
-    print(f"[codexopen] provider={target.provider_name} base_url={target.base_url} model={args.model or target.model}")
+    print(f"[codexopen] provider={target.provider_name} base_url={target.base_url} model={model}")
     print(f"[codexopen] env_key={target.env_key_name}")
+    print(f"[codexopen] compat_disables={','.join(COMPAT_DISABLE_FEATURES)}")
     print(f"[codexopen] cmd={' '.join(shlex.quote(c) for c in cmd)}")
 
     if args.dry_run:

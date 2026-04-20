@@ -58,7 +58,7 @@ class Settings(BaseSettings):
 
     # OpenAI-compatible OpenRouter endpoint config (provider-specific names prevent OPENAI_API_KEY collisions).
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
-    openrouter_model: str = Field(default="qwen/qwen3.5-35b-a3b", alias="OPENROUTER_MODEL")
+    openrouter_model: str = Field(default="qwen/qwen3.6-plus", alias="OPENROUTER_MODEL")
 
     # Programmatic deployment controls — never delegated to the LLM.
     max_deployment_hours: int = 8

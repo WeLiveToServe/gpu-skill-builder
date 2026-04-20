@@ -13,7 +13,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from open_harness_common import openrouter_target, run_interactive
+from open_harness_common import openrouter_target, resolve_locked_model, run_interactive
 
 
 def _native_qwen() -> str:
@@ -45,11 +45,11 @@ def main() -> int:
 
     try:
         target = openrouter_target()
+        model = resolve_locked_model(args.model)
     except Exception as exc:
         print(f"[qwen] {exc}", file=sys.stderr)
         return 1
 
-    model = args.model.strip() or target.model
     cmd = [
         _native_qwen(),
         "--auth-type",
