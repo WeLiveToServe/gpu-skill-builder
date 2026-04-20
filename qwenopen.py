@@ -13,7 +13,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from open_harness_common import resolve_target_sync, run_interactive
+from open_harness_common import openrouter_target, run_interactive
 
 
 def _native_qwen() -> str:
@@ -33,22 +33,18 @@ def _delegate_native(argv: list[str]) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--openrouter", action="store_true")
-    parser.add_argument("--activegpu", action="store_true")
     parser.add_argument("--model", default="")
     parser.add_argument("--dry-run", action="store_true")
     args, passthrough = parser.parse_known_args()
 
-    if not args.openrouter and not args.activegpu:
+    if not args.openrouter:
         native_passthrough = {"mcp", "extensions", "auth", "hooks", "hook", "channel", "--help", "-h", "--version", "-v"}
         if passthrough and passthrough[0] in native_passthrough:
             return _delegate_native(sys.argv[1:])
         args.openrouter = True
-    if args.openrouter and args.activegpu:
-        print("[qwen] Choose only one of --openrouter or --activegpu.", file=sys.stderr)
-        return 1
 
     try:
-        target = resolve_target_sync(args.openrouter, args.activegpu)
+        target = openrouter_target()
     except Exception as exc:
         print(f"[qwen] {exc}", file=sys.stderr)
         return 1

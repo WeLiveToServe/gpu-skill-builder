@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-codexopen: Launch Codex wired to either OpenRouter or an active GPU endpoint.
+codexopen: Launch Codex routed to OpenRouter.
 
-Examples:
-  python codexopen.py --openrouter
-  python codexopen.py --activegpu
-  python codexopen.py --activegpu --model google/gemma-4-31B-it
+NOTE: Codex v0.115+ removed wire_api="chat" support. Only wire_api="responses"
+is supported, which is incompatible with OpenRouter's tool-type requirements
+(openrouter:web_search, openrouter:datetime, etc.). This wrapper will likely
+fail on first turn until Codex adds a way to disable built-in Responses tools
+or OpenRouter relaxes its tool-type validation.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from open_harness_common import LaunchTarget, resolve_target_sync, run_interactive
+from open_harness_common import LaunchTarget, openrouter_target, run_interactive
 
 
 def _build_codex_cmd(target: LaunchTarget, cwd: str, model_override: str | None) -> list[str]:
@@ -36,17 +37,14 @@ def _build_codex_cmd(target: LaunchTarget, cwd: str, model_override: str | None)
         "-c",
         f'model_providers.{provider_id}.env_key="{target.env_key_name}"',
         "-c",
-        f'model_providers.{provider_id}.wire_api="chat"',
+        f'model_providers.{provider_id}.wire_api="responses"',
         "-C",
         cwd,
     ]
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Launch Codex against OpenRouter or active GPU endpoint.")
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--openrouter", action="store_true", help="Use OpenRouter endpoint from config.")
-    mode.add_argument("--activegpu", action="store_true", help="Auto-detect active GPU endpoint across providers.")
+    parser = argparse.ArgumentParser(description="Launch Codex routed to OpenRouter.")
     parser.add_argument("--model", default="", help="Optional model override.")
     parser.add_argument(
         "--dry-run",
@@ -56,7 +54,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        target = resolve_target_sync(args.openrouter, args.activegpu)
+        target = openrouter_target()
     except Exception as exc:
         print(f"[codexopen] {exc}", file=sys.stderr)
         return 1

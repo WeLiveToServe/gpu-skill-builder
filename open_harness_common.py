@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import os
 import shutil
 import subprocess
@@ -8,12 +7,7 @@ import time
 from dataclasses import dataclass
 
 from config import settings
-from models import InstanceInfo, Provider
-from providers import PROVIDER_MAP
 
-ACTIVE_STATUSES = {"running", "deployed"}
-GPU_PROVIDER_ORDER = (Provider.DIGITALOCEAN, Provider.MODAL, Provider.HUGGINGFACE)
-# Looked up from OpenRouter live models list (paid): https://openrouter.ai/api/v1/models
 DEFAULT_OPENROUTER_MODEL = "qwen/qwen3.5-35b-a3b"
 
 
@@ -47,37 +41,6 @@ def resolve_openrouter_model() -> str:
     return configured
 
 
-def _pick_instance(instances: list[InstanceInfo]) -> InstanceInfo | None:
-    for inst in instances:
-        if inst.status in ACTIVE_STATUSES and inst.endpoint_url:
-            return inst
-    return None
-
-
-async def discover_active_gpu() -> LaunchTarget:
-    errors: list[str] = []
-    for provider in GPU_PROVIDER_ORDER:
-        provider_cls = PROVIDER_MAP.get(provider)
-        if not provider_cls:
-            continue
-        try:
-            instances = await provider_cls().list_instances()
-            picked = _pick_instance(instances)
-            if not picked:
-                continue
-            return LaunchTarget(
-                provider_name=provider.value,
-                base_url=normalize_base_url(picked.endpoint_url),
-                model=picked.model_repo_id or "q",
-                env_key_name="GPU_ENDPOINT_API_KEY",
-                env_key_value=os.environ.get("GPU_ENDPOINT_API_KEY", "dummy"),
-            )
-        except Exception as exc:  # pragma: no cover - provider/network variability
-            errors.append(f"{provider.value}: {exc}")
-    detail = "; ".join(errors) if errors else "no running/deployed instances found"
-    raise RuntimeError(f"No active GPU endpoint detected ({detail}).")
-
-
 def openrouter_target() -> LaunchTarget:
     if not settings.openrouter_api_key:
         raise RuntimeError(
@@ -90,14 +53,6 @@ def openrouter_target() -> LaunchTarget:
         env_key_name="OPENROUTER_API_KEY",
         env_key_value=settings.openrouter_api_key,
     )
-
-
-def resolve_target_sync(use_openrouter: bool, use_active_gpu: bool) -> LaunchTarget:
-    if use_openrouter:
-        return openrouter_target()
-    if use_active_gpu:
-        return asyncio.run(discover_active_gpu())
-    raise RuntimeError("One of --openrouter or --activegpu must be set.")
 
 
 def _resolve_windows_cmd(cmd: list[str]) -> list[str]:
