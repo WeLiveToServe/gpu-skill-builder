@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from config import settings
 
-DEFAULT_OPENROUTER_MODEL = "qwen/qwen3.5-35b-a3b"
+DEFAULT_OPENROUTER_MODEL = "qwen/qwen3.6-plus"
 
 
 @dataclass
