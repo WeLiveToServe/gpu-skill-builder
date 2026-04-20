@@ -36,6 +36,28 @@ GOOSE_MODEL = os.environ.get("BENCH_GOOSE_MODEL", "q")
 HARNESS_ORDER = ["qwen", "opencode", "codex", "claude", "goose"]
 
 
+def _cli_name(path_like: str) -> str:
+    return Path(path_like).name.lower()
+
+
+def _is_codexopen_cli(path_like: str) -> bool:
+    return _cli_name(path_like) == "codexopen.cmd"
+
+
+def _is_claudeopen_cli(path_like: str) -> bool:
+    return _cli_name(path_like) == "claudeopen.cmd"
+
+
+def _is_qwen_wrapper_cli(path_like: str) -> bool:
+    # Local wrapper path and PATH-installed wrapper are both `qwen.cmd`.
+    return _cli_name(path_like) == "qwen.cmd"
+
+
+def _is_opencode_wrapper_cli(path_like: str) -> bool:
+    # Local wrapper path and PATH-installed wrapper are both `opencode.cmd`.
+    return _cli_name(path_like) == "opencode.cmd"
+
+
 def run_cmd(
     cmd: List[str], env: Dict[str, str], timeout_s: int, input_text: str | None = None,
     cwd: str | None = None,
@@ -64,6 +86,18 @@ def run_cmd(
 
 def strip_ansi(text: str) -> str:
     return re.sub(r"\x1B\[[0-9;]*[A-Za-z]", "", text)
+
+
+def strip_wrapper_banner_lines(text: str) -> str:
+    filtered: List[str] = []
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("[codexopen]") or s.startswith("[claudeopen]") or s.startswith("[qwen]") or s.startswith("[opencode]"):
+            continue
+        if s.startswith("> build"):
+            continue
+        filtered.append(line)
+    return "\n".join(filtered).strip()
 
 
 def extract_code(response_text: str) -> str:
@@ -325,28 +359,41 @@ def build_prompt(task: Dict[str, Any]) -> str:
 
 def run_qwen(prompt: str, timeout_s: int = 240) -> Dict[str, Any]:
     env = os.environ.copy()
-    openrouter_key = env.get("OPENROUTER_API_KEY", "dummy")
-    cmd = [
-        QWEN_CLI,
-        "--prompt",
-        prompt,
-        "--auth-type",
-        "openai",
-        "--openai-api-key",
-        openrouter_key,
-        "--openai-base-url",
-        OPENAI_BASE_URL,
-        "--model",
-        QWEN_MODEL,
-        "--output-format",
-        "json",
-        "--yolo",
-    ]
+    if _is_qwen_wrapper_cli(QWEN_CLI):
+        # Wrapper already injects OpenRouter auth + model wiring.
+        cmd = [
+            QWEN_CLI,
+            "--prompt",
+            prompt,
+            "--output-format",
+            "json",
+            "--yolo",
+        ]
+    else:
+        openrouter_key = env.get("OPENROUTER_API_KEY", "").strip()
+        if not openrouter_key:
+            raise RuntimeError("OPENROUTER_API_KEY must be set for qwen harness.")
+        cmd = [
+            QWEN_CLI,
+            "--prompt",
+            prompt,
+            "--auth-type",
+            "openai",
+            "--openai-api-key",
+            openrouter_key,
+            "--openai-base-url",
+            OPENAI_BASE_URL,
+            "--model",
+            QWEN_MODEL,
+            "--output-format",
+            "json",
+            "--yolo",
+        ]
     with tempfile.TemporaryDirectory() as tmp:
         out = run_cmd(cmd, env, timeout_s, cwd=tmp)
-    response = out["stdout"].strip()
+    response = strip_wrapper_banner_lines(out["stdout"])
     try:
-        payload = json.loads(response)
+        payload = json.loads(response.strip())
         if isinstance(payload, list):
             for item in reversed(payload):
                 if item.get("type") == "result" and item.get("subtype") == "success":
@@ -360,57 +407,86 @@ def run_qwen(prompt: str, timeout_s: int = 240) -> Dict[str, Any]:
 
 def run_opencode(prompt: str, timeout_s: int = 240) -> Dict[str, Any]:
     env = os.environ.copy()
-    env["OPENROUTER_API_KEY"] = env.get("OPENROUTER_API_KEY", "dummy")
-    cmd = [
-        OPENCODE_CLI,
-        "run",
-        prompt,
-        "-m",
-        OPENCODE_MODEL,
-        "--dangerously-skip-permissions",
-        "--pure",
-    ]
+    if _is_opencode_wrapper_cli(OPENCODE_CLI):
+        # Wrapper sets model + provider config; avoid duplicating -m.
+        cmd = [
+            OPENCODE_CLI,
+            "run",
+            prompt,
+            "--dangerously-skip-permissions",
+            "--pure",
+        ]
+    else:
+        openrouter_key = env.get("OPENROUTER_API_KEY", "").strip()
+        if not openrouter_key:
+            raise RuntimeError("OPENROUTER_API_KEY must be set for opencode harness.")
+        env["OPENROUTER_API_KEY"] = openrouter_key
+        cmd = [
+            OPENCODE_CLI,
+            "run",
+            prompt,
+            "-m",
+            OPENCODE_MODEL,
+            "--dangerously-skip-permissions",
+            "--pure",
+        ]
     with tempfile.TemporaryDirectory() as tmp:
         out = run_cmd(cmd, env, timeout_s, cwd=tmp)
-    cleaned = strip_ansi(out["stdout"])
+    cleaned = strip_wrapper_banner_lines(strip_ansi(out["stdout"]))
     out["response_text"] = cleaned.strip()
     return out
 
 
 def run_codex(prompt: str, result_file: Path, timeout_s: int = 300) -> Dict[str, Any]:
     env = os.environ.copy()
-    env["OPENROUTER_API_KEY"] = env.get("OPENROUTER_API_KEY", "dummy")
+    openrouter_key = env.get("OPENROUTER_API_KEY", "").strip()
+    if openrouter_key:
+        env["OPENROUTER_API_KEY"] = openrouter_key
     with tempfile.TemporaryDirectory() as tmp:
-        cmd = [
-            CODEX_CLI,
-            "exec",
-            "--skip-git-repo-check",
-            "-C",
-            tmp,
-            "--disable",
-            "apps",
-            "--disable",
-            "plugins",
-            "--disable",
-            "personality",
-            "--disable",
-            "multi_agent",
-            "--disable",
-            "skill_mcp_dependency_install",
-            "--disable",
-            "tool_suggest",
-            "--disable",
-            "workspace_dependencies",
-            "-c",
-            f'model="{CODEX_MODEL}"',
-            "-c",
-            'model_provider="openrouter"',
-            "-c",
-            f'model_providers.openrouter={{name="openrouter",base_url="{OPENAI_BASE_URL}",env_key="OPENROUTER_API_KEY",wire_api="responses"}}',
-            "--dangerously-bypass-approvals-and-sandbox",
-            "-o",
-            str(result_file),
-        ]
+        if _is_codexopen_cli(CODEX_CLI):
+            cmd = [
+                CODEX_CLI,
+                "exec",
+                "--skip-git-repo-check",
+                "-C",
+                tmp,
+                "--dangerously-bypass-approvals-and-sandbox",
+                "-o",
+                str(result_file),
+            ]
+        else:
+            if not openrouter_key:
+                raise RuntimeError("OPENROUTER_API_KEY must be set for codex harness.")
+            cmd = [
+                CODEX_CLI,
+                "exec",
+                "--skip-git-repo-check",
+                "-C",
+                tmp,
+                "--disable",
+                "apps",
+                "--disable",
+                "plugins",
+                "--disable",
+                "personality",
+                "--disable",
+                "multi_agent",
+                "--disable",
+                "skill_mcp_dependency_install",
+                "--disable",
+                "tool_suggest",
+                "--disable",
+                "workspace_dependencies",
+                "-c",
+                f'model="{CODEX_MODEL}"',
+                "-c",
+                'model_provider="openrouter"',
+                "-c",
+                f'model_providers.openrouter={{name="openrouter",base_url="{OPENAI_BASE_URL}",env_key="OPENROUTER_API_KEY",wire_api="responses"}}',
+                "--dangerously-bypass-approvals-and-sandbox",
+                "-o",
+                str(result_file),
+            ]
         out = run_cmd(cmd, env, timeout_s, input_text=prompt, cwd=tmp)
     response = ""
     if result_file.exists():
@@ -421,37 +497,79 @@ def run_codex(prompt: str, result_file: Path, timeout_s: int = 300) -> Dict[str,
     return out
 
 
+def _extract_from_stream_json(raw: str) -> str:
+    """
+    Parse --output-format stream-json --verbose output.
+    Collects all text deltas from assistant content blocks.
+    Falls back to the summary result field if present.
+    """
+    texts: List[str] = []
+    result_field = ""
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        t = obj.get("type", "")
+        if t == "content_block_delta":
+            delta = obj.get("delta", {})
+            if delta.get("type") == "text_delta":
+                texts.append(delta.get("text", ""))
+        elif t == "assistant":
+            for block in obj.get("message", {}).get("content", []):
+                if block.get("type") == "text":
+                    texts.append(block.get("text", ""))
+        elif t == "result":
+            result_field = obj.get("result", "")
+    combined = "".join(texts).strip()
+    return combined or result_field
+
+
 def run_claude(prompt: str, timeout_s: int = 300) -> Dict[str, Any]:
     env = os.environ.copy()
-    env["ANTHROPIC_API_KEY"] = env.get("OPENROUTER_API_KEY", "dummy")
-    env["ANTHROPIC_BASE_URL"] = ANTHROPIC_BASE_URL
-    env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = CLAUDE_MODEL
-    env["ANTHROPIC_CUSTOM_MODEL_OPTION_NAME"] = f"OpenRouter: {CLAUDE_MODEL}"
-    cmd = [
-        CLAUDE_CLI,
-        "-p",
-        prompt,
-        "--output-format",
-        "json",
-        "--permission-mode",
-        "bypassPermissions",
-        "--dangerously-skip-permissions",
-        "--model",
-        CLAUDE_MODEL,
-        "--bare",
-        "--disable-slash-commands",
-        "--tools=",
-    ]
+    if _is_claudeopen_cli(CLAUDE_CLI):
+        # stream-json + verbose surfaces the assistant message block,
+        # which is where the response text lives when result field is empty.
+        cmd = [
+            CLAUDE_CLI,
+            "-p",
+            prompt,
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--permission-mode",
+            "bypassPermissions",
+            "--dangerously-skip-permissions",
+        ]
+    else:
+        openrouter_key = env.get("OPENROUTER_API_KEY", "").strip()
+        if not openrouter_key:
+            raise RuntimeError("OPENROUTER_API_KEY must be set for claude harness.")
+        env["ANTHROPIC_API_KEY"] = openrouter_key
+        env["ANTHROPIC_BASE_URL"] = ANTHROPIC_BASE_URL
+        env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = CLAUDE_MODEL
+        env["ANTHROPIC_CUSTOM_MODEL_OPTION_NAME"] = f"OpenRouter: {CLAUDE_MODEL}"
+        cmd = [
+            CLAUDE_CLI,
+            "-p",
+            prompt,
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--permission-mode",
+            "bypassPermissions",
+            "--dangerously-skip-permissions",
+            "--model",
+            CLAUDE_MODEL,
+        ]
     # Run from a throw-away temp dir so Claude cannot write to repo files.
     with tempfile.TemporaryDirectory() as tmp:
         out = run_cmd(cmd, env, timeout_s, cwd=tmp)
-    response = out["stdout"].strip()
-    try:
-        payload = json.loads(response)
-        response = payload.get("result", response)
-    except Exception:
-        pass
-    out["response_text"] = response
+    raw = strip_wrapper_banner_lines(out["stdout"])
+    out["response_text"] = _extract_from_stream_json(raw)
     return out
 
 

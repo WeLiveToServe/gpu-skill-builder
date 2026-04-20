@@ -55,7 +55,7 @@ def _build_codex_cmd(target: LaunchTarget, cwd: str, model: str, passthrough: li
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Launch Codex routed to OpenRouter.")
-    parser.add_argument("--model", default="", help="Ignored unless set to locked model qwen/qwen3.6-plus.")
+    parser.add_argument("--model", default="", help="Ignored unless set to locked model openai/gpt-oss-120b:free.")
     parser.add_argument(
         "--dry-run",
         action="store_true",

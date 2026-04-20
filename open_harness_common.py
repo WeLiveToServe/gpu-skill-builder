@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from config import settings
 
-DEFAULT_OPENROUTER_MODEL = "qwen/qwen3.6-plus"
+DEFAULT_OPENROUTER_MODEL = "openai/gpt-oss-120b:free"
 
 
 @dataclass

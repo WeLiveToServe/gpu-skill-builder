@@ -1,0 +1,13 @@
+{
+  "harness": "codex",
+  "suites": [
+    "extreme100"
+  ],
+  "runs": [
+    {
+      "suite_id": "extreme100",
+      "run_dir": "C:\\Users\\keith\\dev\\gpu-skill-builder\\.bench\\benchmark-results\\run-1776702591-codex-gemma4-extreme100",
+      "results_path": "C:\\Users\\keith\\dev\\gpu-skill-builder\\.bench\\benchmark-results\\run-1776702591-codex-gemma4-extreme100\\results.json"
+    }
+  ]
+}
