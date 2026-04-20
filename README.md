@@ -189,7 +189,7 @@ MODAL_TOKEN_ID=ak-...                   # Modal token id
 MODAL_TOKEN_SECRET=as-...               # Modal token secret
 OPENROUTER_API_KEY=sk-or-...            # OpenRouter fallback provider
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL=openrouter/auto
+OPENROUTER_MODEL=qwen/qwen3.5-35b-a3b
 TELEGRAM_BOT_TOKEN=123456:ABC...        # Telegram alert bot token
 TELEGRAM_CHAT_ID=123456789              # Target user/group chat id
 GPU_MONITOR_ENABLED=false               # Set true on always-on monitor host
@@ -218,7 +218,7 @@ MODAL_TOKEN_ID=
 MODAL_TOKEN_SECRET=
 OPENROUTER_API_KEY=
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL=openrouter/auto
+OPENROUTER_MODEL=qwen/qwen3.5-35b-a3b
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 GPU_MONITOR_ENABLED=false
@@ -334,3 +334,4 @@ See `providers/hf_provider.py` as the reference implementation.
 - **Multi-provider parallel availability check** — no fallback to a second GPU provider if the first has no capacity
 - **ThunderCompute / Vast.ai / NVIDIA providers** — accounts and credentials in place; Python provider classes not yet written
 - **Unit test coverage** — test suite exists (`tests/`) covering guardrails, model validation, state serialization, and config loading; provider integration tests require live API access and are not yet written
+
