@@ -38,13 +38,17 @@ def main() -> int:
     cmd = _build_cmd(cwd, model, passthrough)
 
     env = os.environ.copy()
-    # Claude Code only reads ANTHROPIC_API_KEY (ignores ANTHROPIC_AUTH_TOKEN).
-    # Setting it to the OpenRouter key + ANTHROPIC_BASE_URL routes requests to OpenRouter.
-    # A one-time consent prompt may appear for the custom key — select "Yes".
+    # Isolate from the user's claude.ai login. Without this, the stored OAuth
+    # token from `claude /login` takes precedence over ANTHROPIC_API_KEY and
+    # the OpenRouter routing is ignored.
+    isolated_config = str(Path.home() / ".claude-openrouter")
+    Path(isolated_config).mkdir(parents=True, exist_ok=True)
+    env["CLAUDE_CONFIG_DIR"] = isolated_config
     env["ANTHROPIC_API_KEY"] = target.env_key_value
     env["ANTHROPIC_BASE_URL"] = target.base_url
 
     print(f"[claudeopen] provider={target.provider_name} base_url={env['ANTHROPIC_BASE_URL']} model={model}")
+    print(f"[claudeopen] config_dir={isolated_config} (isolated from claude.ai login)")
     print("[claudeopen] env_key=ANTHROPIC_API_KEY (set to OpenRouter key)")
     print(f"[claudeopen] cmd={' '.join(shlex.quote(c) for c in cmd)}")
 
