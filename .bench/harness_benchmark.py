@@ -15,14 +15,14 @@ BASE_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = BASE_DIR / "benchmark-results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-OPENAI_BASE_URL = os.environ.get("BENCH_OPENAI_BASE_URL", "http://127.0.0.1:18000/v1")
-ANTHROPIC_BASE_URL = os.environ.get("BENCH_ANTHROPIC_BASE_URL", "http://127.0.0.1:18000")
-QWEN_MODEL = os.environ.get("BENCH_QWEN_MODEL", "q")
+OPENAI_BASE_URL = os.environ.get("BENCH_OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+ANTHROPIC_BASE_URL = os.environ.get("BENCH_ANTHROPIC_BASE_URL", "https://openrouter.ai/api")
+QWEN_MODEL = os.environ.get("BENCH_QWEN_MODEL", "qwen/qwen3.6-plus")
 OPENCODE_MODEL = os.environ.get(
-    "BENCH_OPENCODE_MODEL", "doqwen/q"
+    "BENCH_OPENCODE_MODEL", "openrouter/qwen/qwen3.6-plus"
 )
-CODEX_MODEL = os.environ.get("BENCH_CODEX_MODEL", "q")
-CLAUDE_MODEL = os.environ.get("BENCH_CLAUDE_MODEL", "q")
+CODEX_MODEL = os.environ.get("BENCH_CODEX_MODEL", "qwen/qwen3.6-plus")
+CLAUDE_MODEL = os.environ.get("BENCH_CLAUDE_MODEL", "qwen/qwen3.6-plus")
 
 NPM_BIN_DIR = Path(os.environ.get("APPDATA", "")) / "npm"
 QWEN_CLI = os.environ.get("BENCH_QWEN_CLI", str(NPM_BIN_DIR / "qwen.cmd"))
@@ -325,6 +325,7 @@ def build_prompt(task: Dict[str, Any]) -> str:
 
 def run_qwen(prompt: str, timeout_s: int = 240) -> Dict[str, Any]:
     env = os.environ.copy()
+    openrouter_key = env.get("OPENROUTER_API_KEY", "dummy")
     cmd = [
         QWEN_CLI,
         "--prompt",
@@ -332,7 +333,7 @@ def run_qwen(prompt: str, timeout_s: int = 240) -> Dict[str, Any]:
         "--auth-type",
         "openai",
         "--openai-api-key",
-        "dummy",
+        openrouter_key,
         "--openai-base-url",
         OPENAI_BASE_URL,
         "--model",
@@ -359,6 +360,7 @@ def run_qwen(prompt: str, timeout_s: int = 240) -> Dict[str, Any]:
 
 def run_opencode(prompt: str, timeout_s: int = 240) -> Dict[str, Any]:
     env = os.environ.copy()
+    env["OPENROUTER_API_KEY"] = env.get("OPENROUTER_API_KEY", "dummy")
     cmd = [
         OPENCODE_CLI,
         "run",
@@ -377,7 +379,7 @@ def run_opencode(prompt: str, timeout_s: int = 240) -> Dict[str, Any]:
 
 def run_codex(prompt: str, result_file: Path, timeout_s: int = 300) -> Dict[str, Any]:
     env = os.environ.copy()
-    env["DOQWEN_API_KEY"] = "dummy"
+    env["OPENROUTER_API_KEY"] = env.get("OPENROUTER_API_KEY", "dummy")
     with tempfile.TemporaryDirectory() as tmp:
         cmd = [
             CODEX_CLI,
@@ -402,9 +404,9 @@ def run_codex(prompt: str, result_file: Path, timeout_s: int = 300) -> Dict[str,
             "-c",
             f'model="{CODEX_MODEL}"',
             "-c",
-            'model_provider="doqwen"',
+            'model_provider="openrouter"',
             "-c",
-            f'model_providers.doqwen={{name="DO Qwen",base_url="{OPENAI_BASE_URL}",env_key="DOQWEN_API_KEY",wire_api="responses"}}',
+            f'model_providers.openrouter={{name="openrouter",base_url="{OPENAI_BASE_URL}",env_key="OPENROUTER_API_KEY",wire_api="responses"}}',
             "--dangerously-bypass-approvals-and-sandbox",
             "-o",
             str(result_file),
@@ -421,8 +423,10 @@ def run_codex(prompt: str, result_file: Path, timeout_s: int = 300) -> Dict[str,
 
 def run_claude(prompt: str, timeout_s: int = 300) -> Dict[str, Any]:
     env = os.environ.copy()
-    env["ANTHROPIC_API_KEY"] = "dummy"
+    env["ANTHROPIC_API_KEY"] = env.get("OPENROUTER_API_KEY", "dummy")
     env["ANTHROPIC_BASE_URL"] = ANTHROPIC_BASE_URL
+    env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = CLAUDE_MODEL
+    env["ANTHROPIC_CUSTOM_MODEL_OPTION_NAME"] = f"OpenRouter: {CLAUDE_MODEL}"
     cmd = [
         CLAUDE_CLI,
         "-p",

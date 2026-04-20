@@ -27,12 +27,12 @@ Evaluates four CLI agents (claude, codex, opencode, qwen) against Python coding 
 The model server must be running and reachable before launching the harness. Configure endpoints and CLI paths via environment variables:
 
 ```bash
-export BENCH_OPENAI_BASE_URL=http://127.0.0.1:18000/v1   # default
-export BENCH_ANTHROPIC_BASE_URL=http://127.0.0.1:18000    # default
-export BENCH_CLAUDE_MODEL=<model-id>
-export BENCH_CODEX_MODEL=<model-id>
-export BENCH_OPENCODE_MODEL=doqwen/<model-id>
-export BENCH_QWEN_MODEL=<model-id>
+export BENCH_OPENAI_BASE_URL=https://openrouter.ai/api/v1  # default
+export BENCH_ANTHROPIC_BASE_URL=https://openrouter.ai/api  # default
+export BENCH_CLAUDE_MODEL=qwen/qwen3.6-plus                # default
+export BENCH_CODEX_MODEL=qwen/qwen3.6-plus                 # default
+export BENCH_OPENCODE_MODEL=openrouter/qwen/qwen3.6-plus   # default
+export BENCH_QWEN_MODEL=qwen/qwen3.6-plus                  # default
 
 # Optional: override CLI paths (defaults to %APPDATA%/npm/*.cmd)
 export BENCH_CLAUDE_CLI=/path/to/claude.cmd
@@ -45,6 +45,9 @@ export BENCH_QWEN_CLI=/path/to/qwen.cmd
 export BENCH_GOOSE_CLI=~/.local/bin/goose
 export BENCH_GOOSE_MODEL=<model-id>   # same model ID as other runners
 ```
+
+Codex compatibility note:
+- `run_codex()` already applies OpenRouter-safe `--disable` flags (`apps`, `plugins`, `personality`, `multi_agent`, `skill_mcp_dependency_install`, `tool_suggest`, `workspace_dependencies`) by default.
 
 **Goose binary:** Install from the goose repo before using the goose harness:
 ```powershell
