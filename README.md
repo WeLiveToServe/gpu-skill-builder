@@ -26,6 +26,22 @@ open-source coding harnesses that support OpenAI chat completions style APIs.
 
 ---
 
+## Streamlit deployment URL
+
+Deploy this repository on Streamlit Community Cloud with:
+
+`https://share.streamlit.io/deploy?repository=https://github.com/WeLiveToServe/gpu-skill-builder`
+
+During deployment, set:
+- Branch: `main`
+- Entrypoint: `streamlit_app.py`
+
+If you leave the custom subdomain blank, Streamlit will assign a generated app URL
+on `*.streamlit.app`. You can optionally set a custom subdomain (for example,
+`gpu-skill-builder.streamlit.app`) if available.
+
+---
+
 ## Two modes of operation
 
 ### Interactive (for humans)
