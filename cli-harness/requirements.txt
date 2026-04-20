@@ -1,0 +1,3 @@
+# No third-party dependencies required.
+# All wrappers use only the Python standard library.
+# The underlying CLIs (codex, claude, opencode, qwen) must be installed separately.
