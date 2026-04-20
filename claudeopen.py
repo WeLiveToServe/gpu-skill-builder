@@ -46,6 +46,9 @@ def main() -> int:
     env["CLAUDE_CONFIG_DIR"] = isolated_config
     env["ANTHROPIC_API_KEY"] = target.env_key_value
     env["ANTHROPIC_BASE_URL"] = target.base_url
+    # Bypass Claude Code's hardcoded Anthropic-model allowlist.
+    env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = model
+    env["ANTHROPIC_CUSTOM_MODEL_OPTION_NAME"] = f"OpenRouter: {model}"
 
     print(f"[claudeopen] provider={target.provider_name} base_url={env['ANTHROPIC_BASE_URL']} model={model}")
     print(f"[claudeopen] config_dir={isolated_config} (isolated from claude.ai login)")
