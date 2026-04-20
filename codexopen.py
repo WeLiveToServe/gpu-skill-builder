@@ -36,7 +36,7 @@ def _build_codex_cmd(target: LaunchTarget, cwd: str, model_override: str | None)
         "-c",
         f'model_providers.{provider_id}.env_key="{target.env_key_name}"',
         "-c",
-        f'model_providers.{provider_id}.wire_api="responses"',
+        f'model_providers.{provider_id}.wire_api="chat"',
         "-C",
         cwd,
     ]
