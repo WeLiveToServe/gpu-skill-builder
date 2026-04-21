@@ -15,6 +15,7 @@ build/
 # Claude Code session data (keep skills, ignore sessions)
 .claw/
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # IDE
 .vscode/
