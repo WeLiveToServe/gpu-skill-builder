@@ -55,6 +55,7 @@ class TestCostCap:
             mock_settings.stuck_pending_minutes = 15
             mock_settings.watchdog_check_interval_minutes = 5
             mock_settings.openrouter_api_key = ""
+            mock_settings.monitor_enabled = False
 
             provider_inst = AsyncMock()
             provider_inst.list_instances = AsyncMock(return_value=[])
@@ -107,6 +108,7 @@ class TestIdempotency:
             mock_settings.uptime_report_interval_minutes = 30
             mock_settings.stuck_pending_minutes = 15
             mock_settings.watchdog_check_interval_minutes = 5
+            mock_settings.monitor_enabled = False
 
             provider_inst = AsyncMock()
             provider_inst.list_instances = AsyncMock(return_value=[existing])
@@ -148,6 +150,7 @@ class TestConcurrencyCap:
             mock_settings.uptime_report_interval_minutes = 30
             mock_settings.stuck_pending_minutes = 15
             mock_settings.watchdog_check_interval_minutes = 5
+            mock_settings.monitor_enabled = False
 
             provider_inst = AsyncMock()
             provider_inst.list_instances = AsyncMock(return_value=live)
@@ -204,3 +207,60 @@ class TestOpenRouterExplicit:
         assert result.fallback_activated is True
         assert result.instance is not None
         assert result.instance.provider == Provider.OPENROUTER
+
+
+class TestProvisionMonitoring:
+    def test_monitoring_is_scheduled_without_blocking_success(self):
+        from skill import run_skill
+
+        created = _make_instance(name="monitored-gpu", status="running")
+        mock_hw = _make_hardware()
+        mock_model = MagicMock()
+        mock_model.repo_id = "google/gemma-2-2b-it"
+
+        with patch("skill.settings") as mock_settings, \
+             patch("skill._resolve_hardware", new=AsyncMock(return_value=mock_hw)), \
+             patch("skill._resolve_model", return_value=mock_model), \
+             patch("skill.PROVIDER_MAP") as mock_map, \
+             patch("scheduler.schedule_ttl") as schedule_ttl, \
+             patch("scheduler.schedule_uptime_report") as schedule_uptime, \
+             patch("scheduler.schedule_stuck_watchdog") as schedule_watchdog, \
+             patch("scheduler.schedule_readiness_watch") as schedule_readiness_watch, \
+             patch("scheduler.schedule_fleet_monitoring") as schedule_fleet_monitoring, \
+             patch("monitor.monitor_instance_once", new=AsyncMock(return_value=True)) as monitor_once:
+
+            mock_settings.max_spend_per_instance_usd = 100.0
+            mock_settings.max_concurrent_instances = 10
+            mock_settings.max_deployment_hours = 8
+            mock_settings.uptime_report_interval_minutes = 30
+            mock_settings.stuck_pending_minutes = 15
+            mock_settings.watchdog_check_interval_minutes = 5
+            mock_settings.monitor_enabled = True
+            mock_settings.monitor_runtime_alert_minutes = 120
+            mock_settings.monitor_auto_stop_minutes = 0
+            mock_settings.monitor_readiness_timeout_minutes = 20
+            mock_settings.monitor_stale_after_minutes = 10
+            mock_settings.monitor_unhealthy_auto_stop_minutes = 0
+            mock_settings.monitor_readiness_poll_seconds = 30
+
+            provider_inst = AsyncMock()
+            provider_inst.list_instances = AsyncMock(return_value=[])
+            provider_inst.create_instance = AsyncMock(return_value=created)
+            mock_map.__getitem__ = MagicMock(return_value=lambda: provider_inst)
+
+            result = run(run_skill(
+                provider="huggingface",
+                hardware_slug="nvidia-t4-x1",
+                model_repo_id="google/gemma-2-2b-it",
+                instance_name="monitored-gpu",
+            ))
+
+        assert result.success is True
+        assert result.instance is not None
+        assert "readiness monitoring" in result.message.lower()
+        monitor_once.assert_awaited_once()
+        schedule_readiness_watch.assert_called_once()
+        schedule_fleet_monitoring.assert_called_once()
+        schedule_ttl.assert_called_once()
+        schedule_uptime.assert_called_once()
+        schedule_watchdog.assert_called_once()

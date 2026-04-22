@@ -1,0 +1,17 @@
+{
+  "kind": "model_profile",
+  "id": "google-gemma-2-2b-it",
+  "provider_model_id": "google/gemma-2-2b-it",
+  "runtime_family": "openai-compatible",
+  "default_alias": "gemma-2-2b-it",
+  "context_window_tokens": 8192,
+  "throughput_hint": "small-model dev baseline",
+  "launch_hints": {
+    "prefers_prefix_caching": true,
+    "prefers_chunked_prefill": true,
+    "prefers_expert_parallel": false,
+    "prefers_eplb": false,
+    "is_moe": false,
+    "notes": "Useful validation baseline across providers."
+  }
+}

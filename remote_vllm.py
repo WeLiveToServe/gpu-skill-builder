@@ -11,9 +11,14 @@ Requires on the remote VM: vLLM pre-installed, systemd, Python 3, curl.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import re
+import shlex
 from pathlib import Path
+
+from models import Provider
+from profile_registry import DeploymentProfile, ModelProfile
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +30,13 @@ _DEFAULT_HEALTH_TIMEOUT_SEC = 1800  # 30 min — large models take a while
 _REMOTE_SCRIPT = """\
 set -euo pipefail
 
-MODEL_ID="$1"
-PORT="$2"
-GPU_UTIL="$3"
-HEALTH_TIMEOUT="$4"
+SERVICE_B64="$1"
+MODEL_ID="$2"
+SERVED_MODEL_NAME="$3"
+PORT="$4"
+HEALTH_TIMEOUT="$5"
 HF_TOKEN="${HF_TOKEN:-}"
-export MODEL_ID PORT
+export MODEL_ID PORT SERVED_MODEL_NAME SERVICE_B64
 SERVICE_FILE='/etc/systemd/system/vllm.service'
 
 echo '[1/6] ensuring runtime compatibility'
@@ -59,27 +65,22 @@ pkill -f "vllm serve" || true
 sleep 2
 
 echo '[3/6] writing systemd unit'
-{
-  printf '[Unit]\\n'
-  printf 'Description=vLLM OpenAI-compatible server (%s)\\n' "$MODEL_ID"
-  printf 'After=network.target\\n\\n'
-  printf '[Service]\\n'
-  printf 'Type=simple\\n'
-  printf 'User=root\\n'
-  printf 'WorkingDirectory=/root\\n'
-  if [ -n "$HF_TOKEN" ]; then
-    printf 'Environment=HF_TOKEN=%s\\n' "$HF_TOKEN"
-    printf 'Environment=HUGGING_FACE_HUB_TOKEN=%s\\n' "$HF_TOKEN"
-  fi
-  printf 'ExecStart=/usr/local/bin/vllm serve %s --host 0.0.0.0 --port %s --gpu-memory-utilization %s --enable-prefix-caching --served-model-name %s\\n' "$MODEL_ID" "$PORT" "$GPU_UTIL" "$MODEL_ID"
-  printf 'Restart=on-failure\\n'
-  printf 'RestartSec=10\\n'
-  printf 'TimeoutStopSec=180\\n'
-  printf 'StandardOutput=journal\\n'
-  printf 'StandardError=journal\\n\\n'
-  printf '[Install]\\n'
-  printf 'WantedBy=multi-user.target\\n'
-} > "$SERVICE_FILE"
+python3 - <<'PY'
+import base64
+import os
+from pathlib import Path
+
+content = base64.b64decode(os.environ["SERVICE_B64"]).decode("utf-8")
+hf_token = os.environ.get("HF_TOKEN", "")
+hf_lines = ""
+if hf_token:
+    hf_lines = (
+        f"Environment=HF_TOKEN={hf_token}\\n"
+        f"Environment=HUGGING_FACE_HUB_TOKEN={hf_token}\\n"
+    )
+content = content.replace("__HF_ENV_LINES__\\n", hf_lines)
+Path("/etc/systemd/system/vllm.service").write_text(content, encoding="utf-8")
+PY
 
 echo '[4/6] reloading + starting service'
 systemctl daemon-reload
@@ -110,7 +111,7 @@ echo '[6/6] validating /v1/models'
 python3 - <<'VLLMPY'
 import json, urllib.request
 import os
-model = os.environ['MODEL_ID']
+model = os.environ['SERVED_MODEL_NAME']
 port = os.environ['PORT']
 url = f'http://127.0.0.1:{port}/v1/models'
 payload = json.loads(urllib.request.urlopen(url, timeout=15).read().decode())
@@ -141,6 +142,135 @@ def _validate_token(token: str, field_name: str) -> None:
         raise ValueError(f"{field_name} must not contain whitespace.")
 
 
+def _quote_args(args: list[str]) -> str:
+    return " ".join(shlex.quote(arg) for arg in args)
+
+
+def render_vllm_command_args(
+    *,
+    model_profile: ModelProfile,
+    deployment_profile: DeploymentProfile,
+) -> list[str]:
+    runtime = deployment_profile.runtime
+    served_model_name = deployment_profile.served_model_name or model_profile.provider_model_id
+    args = [
+        "/usr/local/bin/vllm",
+        "serve",
+        model_profile.provider_model_id,
+        "--host",
+        "0.0.0.0",
+        "--port",
+        str(runtime.port),
+        "--served-model-name",
+        served_model_name,
+        "--generation-config",
+        "vllm",
+        "--max-model-len",
+        str(runtime.max_model_len),
+        "--gpu-memory-utilization",
+        f"{runtime.gpu_memory_utilization:.2f}",
+        "--tensor-parallel-size",
+        str(runtime.tensor_parallel_size),
+        "--pipeline-parallel-size",
+        str(runtime.pipeline_parallel_size),
+        "--max-num-seqs",
+        str(runtime.max_num_seqs),
+        "--max-num-batched-tokens",
+        str(runtime.max_num_batched_tokens),
+    ]
+    if runtime.kv_cache_dtype:
+        args.extend(["--kv-cache-dtype", runtime.kv_cache_dtype])
+    if runtime.expert_parallel:
+        args.append("--enable-expert-parallel")
+    if runtime.enable_eplb:
+        args.append("--enable-eplb")
+    if runtime.prefix_caching_policy == "enabled":
+        args.append("--enable-prefix-caching")
+    if runtime.chunked_prefill_policy == "enabled":
+        args.append("--enable-chunked-prefill")
+    args.extend(runtime.extra_args)
+    return args
+
+
+def render_vllm_service_unit(
+    *,
+    model_profile: ModelProfile,
+    deployment_profile: DeploymentProfile,
+) -> str:
+    served_model_name = deployment_profile.served_model_name or model_profile.provider_model_id
+    command = _quote_args(
+        render_vllm_command_args(
+            model_profile=model_profile,
+            deployment_profile=deployment_profile,
+        )
+    )
+    return "\n".join(
+        [
+            "[Unit]",
+            f"Description=vLLM OpenAI-compatible server ({served_model_name})",
+            "After=network.target",
+            "",
+            "[Service]",
+            "Type=simple",
+            "User=root",
+            "WorkingDirectory=/root",
+            "__HF_ENV_LINES__",
+            f"ExecStart={command}",
+            "Restart=on-failure",
+            "RestartSec=10",
+            "TimeoutStopSec=180",
+            "StandardOutput=journal",
+            "StandardError=journal",
+            "",
+            "[Install]",
+            "WantedBy=multi-user.target",
+            "",
+        ]
+    )
+
+
+def _default_model_profile(model_id: str) -> ModelProfile:
+    return ModelProfile(
+        id=f"legacy-{model_id.split('/')[-1].lower().replace('.', '-')}",
+        provider_model_id=model_id,
+        runtime_family="vllm",
+        default_alias=model_id.split("/")[-1],
+        throughput_hint="legacy fallback",
+    )
+
+
+def _default_deployment_profile(
+    *,
+    model_profile: ModelProfile,
+    port: int,
+    gpu_memory_utilization: float,
+    health_timeout_sec: int,
+) -> DeploymentProfile:
+    return DeploymentProfile(
+        id="legacy-remote-vllm-default",
+        model_profile_id=model_profile.id,
+        provider=Provider.DIGITALOCEAN,
+        hardware_slug="*",
+        runtime_kind="vllm",
+        endpoint_class="openai-compatible",
+        managed_by_provider=False,
+        served_model_name=model_profile.provider_model_id,
+        description="legacy compatibility deployment profile",
+        runtime={
+            "port": port,
+            "max_model_len": 32768,
+            "max_num_seqs": 4,
+            "gpu_memory_utilization": gpu_memory_utilization,
+            "max_num_batched_tokens": 8192,
+            "tensor_parallel_size": 1,
+            "pipeline_parallel_size": 1,
+            "prefix_caching_policy": "enabled",
+            "chunked_prefill_policy": "enabled",
+        },
+        readiness={"health_timeout_seconds": health_timeout_sec},
+    )
+
+
 async def deploy_vllm_remote(
     ip: str,
     model_id: str,
@@ -149,6 +279,8 @@ async def deploy_vllm_remote(
     gpu_memory_utilization: float = _DEFAULT_GPU_MEM_UTIL,
     health_timeout_sec: int = _DEFAULT_HEALTH_TIMEOUT_SEC,
     hf_token: str | None = None,
+    deployment_profile: DeploymentProfile | None = None,
+    model_profile: ModelProfile | None = None,
 ) -> str:
     """
     SSH into a running VM, load model_id under systemd vllm.service,
@@ -161,14 +293,35 @@ async def deploy_vllm_remote(
     if hf_token:
         _validate_token(hf_token, "hf_token")
 
+    resolved_model_profile = model_profile or _default_model_profile(model_id)
+    resolved_deployment_profile = deployment_profile or _default_deployment_profile(
+        model_profile=resolved_model_profile,
+        port=port,
+        gpu_memory_utilization=gpu_memory_utilization,
+        health_timeout_sec=health_timeout_sec,
+    )
+    rendered_service = render_vllm_service_unit(
+        model_profile=resolved_model_profile,
+        deployment_profile=resolved_deployment_profile,
+    )
+    service_b64 = base64.b64encode(rendered_service.encode("utf-8")).decode("ascii")
+    served_model_name = resolved_deployment_profile.served_model_name or resolved_model_profile.provider_model_id
+    runtime = resolved_deployment_profile.runtime
+    timeout_seconds = resolved_deployment_profile.readiness.health_timeout_seconds
+
     logger.info(
-        "deploy_vllm_remote: %s  model=%s  port=%d  gpu_util=%.2f  timeout=%ds",
-        ip, model_id, port, gpu_memory_utilization, health_timeout_sec,
+        "deploy_vllm_remote: %s  model=%s  profile=%s  port=%d  gpu_util=%.2f  timeout=%ds",
+        ip,
+        model_id,
+        resolved_deployment_profile.id,
+        runtime.port,
+        runtime.gpu_memory_utilization,
+        timeout_seconds,
     )
     logger.info("  SSH key: %s", ssh_key_path)
     logger.info("  Model load may take several minutes — standing by...")
 
-    remote_cmd = []
+    remote_cmd: list[str] = []
     if hf_token:
         remote_cmd.extend(["env", f"HF_TOKEN={hf_token}", f"HUGGING_FACE_HUB_TOKEN={hf_token}"])
     remote_cmd.extend(
@@ -176,25 +329,31 @@ async def deploy_vllm_remote(
             "bash",
             "-s",
             "--",
+            service_b64,
             model_id,
-            str(port),
-            f"{gpu_memory_utilization:.2f}",
-            str(health_timeout_sec),
+            served_model_name,
+            str(runtime.port),
+            str(timeout_seconds),
         ]
     )
 
     proc = await asyncio.create_subprocess_exec(
         "ssh",
-        "-i", str(ssh_key_path),
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "ConnectTimeout=30",
-        "-o", "ServerAliveInterval=60",  # keepalive during long model load
-        "-o", "ServerAliveCountMax=30",
+        "-i",
+        str(ssh_key_path),
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "ConnectTimeout=30",
+        "-o",
+        "ServerAliveInterval=60",
+        "-o",
+        "ServerAliveCountMax=30",
         f"root@{ip}",
         *remote_cmd,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,  # merge so log lines stay ordered
+        stderr=asyncio.subprocess.STDOUT,
     )
 
     stdout, _ = await proc.communicate(input=_REMOTE_SCRIPT.encode())
@@ -211,6 +370,6 @@ async def deploy_vllm_remote(
             + "\n".join(output.splitlines()[-40:])
         )
 
-    endpoint_url = f"http://{ip}:{port}"
+    endpoint_url = f"http://{ip}:{runtime.port}"
     logger.info("deploy_vllm_remote: endpoint ready — %s", endpoint_url)
     return endpoint_url

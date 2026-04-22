@@ -1,0 +1,8 @@
+{
+  "kind": "gateway_profile",
+  "id": "direct-openai-compatible",
+  "alias": "direct-openai-compatible",
+  "strategy": "direct",
+  "target_endpoint_class": "openai-compatible",
+  "notes": "Schema-only gateway profile for direct endpoint routing; no control-plane routing implementation yet."
+}

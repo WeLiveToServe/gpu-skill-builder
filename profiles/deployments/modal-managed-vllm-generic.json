@@ -1,0 +1,34 @@
+{
+  "kind": "deployment_profile",
+  "id": "modal-managed-vllm-generic",
+  "model_profile_id": "",
+  "provider": "modal",
+  "hardware_slug": "*",
+  "runtime_kind": "modal-vllm",
+  "endpoint_class": "openai-compatible",
+  "managed_by_provider": true,
+  "served_model_name": "",
+  "description": "Generic Modal-managed vLLM app contract.",
+  "runtime": {
+    "port": 443,
+    "max_model_len": 32768,
+    "max_num_seqs": 1,
+    "gpu_memory_utilization": 0.9,
+    "max_num_batched_tokens": 8192,
+    "tensor_parallel_size": 1,
+    "pipeline_parallel_size": 1,
+    "expert_parallel": false,
+    "enable_eplb": false,
+    "prefix_caching_policy": "enabled",
+    "chunked_prefill_policy": "enabled",
+    "kv_cache_dtype": "auto",
+    "extra_args": []
+  },
+  "readiness": {
+    "require_health_endpoint": true,
+    "require_models_endpoint": true,
+    "require_smoke_prompt": true,
+    "smoke_prompt": "Reply with OK",
+    "health_timeout_seconds": 900
+  }
+}

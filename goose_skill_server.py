@@ -36,7 +36,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server.fastmcp import FastMCP
-from skill import run_skill_sync
+from skill import ensure_active_endpoint_sync, run_skill_sync
 
 def _parse_args():
     parser = argparse.ArgumentParser(description="gpu-skill-builder MCP server")
@@ -93,6 +93,8 @@ def gpu_provision(
         max_deployment_hours=max_deployment_hours,
         region=region,
     )
+    if result.success and result.instance and result.instance.provider.value != "openrouter":
+        result = ensure_active_endpoint_sync(result)
     if result.success and result.instance:
         return {
             "success": True,
@@ -101,7 +103,10 @@ def gpu_provision(
             "provider": result.instance.provider.value,
             "hardware": result.instance.hardware_slug,
             "model": result.instance.model_repo_id,
+            "served_model_name": result.instance.served_model_name,
             "status": result.instance.status,
+            "readiness_state": result.readiness_state,
+            "handoff_manifest": result.harness_handoff.model_dump() if result.harness_handoff else None,
         }
     return {"success": False, "message": result.message}
 

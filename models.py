@@ -40,6 +40,9 @@ class GpuProvisionRequest(BaseModel):
     instance_name: str
     region: str = "us-east-1"
     max_deployment_hours: int = Field(default=8, ge=1, le=72)
+    deployment_profile_id: str = ""
+    model_profile_id: str = ""
+    harness_profile_id: str = ""
 
     @field_validator("hardware_slug")
     @classmethod
@@ -72,16 +75,54 @@ class InstanceInfo(BaseModel):
     provider: Provider
     hardware_slug: str
     model_repo_id: str
+    served_model_name: str = ""
     status: str
     endpoint_url: str = ""
     region: str = ""
     created_at: str = ""
+    runtime_kind: str = ""
+    endpoint_class: str = ""
+    managed_by_provider: bool = False
+    deployment_profile_id: str = ""
+    model_profile_id: str = ""
+    harness_profile_id: str = ""
+
+
+class HarnessHandoffEnv(BaseModel):
+    base_url_key_name: str
+    model_key_name: str
+    api_key_key_name: str
+
+
+class HarnessHandoffManifest(BaseModel):
+    schema_version: str = "gpu-skill-builder/handoff-v1"
+    harness_profile_id: str = ""
+    harness_name: str = ""
+    protocol: str = "openai-compatible"
+    provider: str = ""
+    hardware_slug: str = ""
+    instance_id: str = ""
+    instance_name: str = ""
+    endpoint_url: str = ""
+    base_url: str = ""
+    runtime_kind: str = ""
+    endpoint_class: str = ""
+    managed_by_provider: bool = False
+    model_repo_id: str = ""
+    served_model_name: str = ""
+    model_name: str = ""
+    deployment_profile_id: str = ""
+    model_profile_id: str = ""
+    readiness_state: str = ""
+    expected_env: Optional[HarnessHandoffEnv] = None
 
 
 class GpuProvisionResult(BaseModel):
     success: bool
     instance: Optional[InstanceInfo] = None
     message: str = ""
+    readiness_state: str = ""
+    harness_handoff: Optional[HarnessHandoffManifest] = None
     fallback_activated: bool = False
     fallback_provider: Optional[Provider] = None
     fallback_reason: str = ""

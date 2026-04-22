@@ -1,0 +1,17 @@
+{
+  "kind": "model_profile",
+  "id": "deepseek-v3-1",
+  "provider_model_id": "deepseek-ai/DeepSeek-V3.1",
+  "runtime_family": "vllm",
+  "default_alias": "deepseek-v3.1",
+  "context_window_tokens": 131072,
+  "throughput_hint": "multi-GPU MoE interactive",
+  "launch_hints": {
+    "prefers_prefix_caching": false,
+    "prefers_chunked_prefill": true,
+    "prefers_expert_parallel": true,
+    "prefers_eplb": true,
+    "is_moe": true,
+    "notes": "Conservative 8x H200 MoE launch profile."
+  }
+}

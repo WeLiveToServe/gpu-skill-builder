@@ -22,17 +22,26 @@ import asyncio
 import concurrent.futures
 import logging
 
-import httpx
-
 from catalog import get_compatible_models
 from config import settings
+from endpoint_probe import ProbeClassification, probe_openai_compatible_endpoint
+from handoff import build_harness_handoff_manifest
 from models import GpuProvisionRequest, GpuProvisionResult, HardwareTier, InstanceInfo, ModelRecommendation, Provider
+from profile_registry import (
+    ResolvedRuntimeSelection,
+    apply_runtime_selection,
+    hydrate_instance_runtime_metadata,
+    resolve_runtime_selection,
+)
 from providers import PROVIDER_MAP
 from providers.base import classify_http_error
 
 logger = logging.getLogger(__name__)
 
 ACTIVE_STATUSES = {"pending", "initializing", "running", "deployed"}
+READINESS_PROVISIONED = "provisioned-unverified"
+READINESS_VERIFIED = "verified-ready"
+READINESS_FALLBACK = "fallback-active"
 
 
 # ── Interactive prompts ────────────────────────────────────────────────────────
@@ -98,16 +107,78 @@ def _resolve_model(hardware: HardwareTier, model_repo_id: str) -> ModelRecommend
     )
 
 
+def _profile_backed_model_recommendation(
+    *,
+    provider_key: Provider,
+    hardware: HardwareTier,
+    model_repo_id: str,
+    model_profile_id: str = "",
+    deployment_profile_id: str = "",
+    harness_profile_id: str = "",
+) -> tuple[ModelRecommendation, ResolvedRuntimeSelection]:
+    selection = resolve_runtime_selection(
+        provider=provider_key,
+        hardware_slug=hardware.slug,
+        model_repo_id=model_repo_id,
+        model_profile_id=model_profile_id,
+        deployment_profile_id=deployment_profile_id,
+        harness_profile_id=harness_profile_id,
+    )
+    return (
+        ModelRecommendation(
+            repo_id=selection.model_profile.provider_model_id,
+            display_name=selection.model_profile.default_alias,
+            size_params="profile",
+            vram_required_gb=hardware.vram_gb,
+            notes="resolved from committed/generative profile registry",
+        ),
+        selection,
+    )
+
+
+def _result_from_instance(
+    *,
+    instance: InstanceInfo,
+    message: str,
+    readiness_state: str,
+    fallback_activated: bool = False,
+    fallback_provider: Provider | None = None,
+    fallback_reason: str = "",
+    primary_provider_error: str | None = None,
+) -> GpuProvisionResult:
+    hydrated = hydrate_instance_runtime_metadata(instance, harness_profile_id=instance.harness_profile_id)
+    handoff = None
+    if hydrated.endpoint_url:
+        handoff = build_harness_handoff_manifest(
+            hydrated,
+            readiness_state=readiness_state,
+        )
+    return GpuProvisionResult(
+        success=True,
+        instance=hydrated,
+        message=message,
+        readiness_state=readiness_state,
+        harness_handoff=handoff,
+        fallback_activated=fallback_activated,
+        fallback_provider=fallback_provider,
+        fallback_reason=fallback_reason,
+        primary_provider_error=primary_provider_error,
+    )
+
+
 def _openrouter_instance(instance_name: str) -> InstanceInfo:
-    return InstanceInfo(
-        id=f"{instance_name}-openrouter-fallback",
-        name=instance_name,
-        provider=Provider.OPENROUTER,
-        hardware_slug="openrouter-default",
-        model_repo_id=settings.openrouter_model,
-        status="running",
-        endpoint_url=settings.openrouter_base_url.rstrip("/"),
-        region="global",
+    return hydrate_instance_runtime_metadata(
+        InstanceInfo(
+            id=f"{instance_name}-openrouter-fallback",
+            name=instance_name,
+            provider=Provider.OPENROUTER,
+            hardware_slug="openrouter-default",
+            model_repo_id=settings.openrouter_model,
+            served_model_name=settings.openrouter_model,
+            status="running",
+            endpoint_url=settings.openrouter_base_url.rstrip("/"),
+            region="global",
+        )
     )
 
 
@@ -123,15 +194,16 @@ def _fallback_result(
                 "GPU path unavailable and OpenRouter fallback is not configured. "
                 "Set OPENROUTER_API_KEY in gpu-skill-builder/.env."
             ),
+            readiness_state=READINESS_FALLBACK,
             fallback_activated=False,
             fallback_provider=Provider.OPENROUTER,
             fallback_reason=reason,
             primary_provider_error=primary_provider_error,
         )
-    return GpuProvisionResult(
-        success=True,
+    return _result_from_instance(
         instance=_openrouter_instance(instance_name),
         message=f"GPU path unavailable; switched to OpenRouter fallback. Reason: {reason}",
+        readiness_state=READINESS_FALLBACK,
         fallback_activated=True,
         fallback_provider=Provider.OPENROUTER,
         fallback_reason=reason,
@@ -150,7 +222,15 @@ async def ensure_active_endpoint(result: GpuProvisionResult) -> GpuProvisionResu
     if not result.success or not result.instance:
         return result
     if result.instance.provider == Provider.OPENROUTER:
-        return result
+        return _result_from_instance(
+            instance=result.instance,
+            message=result.message or "OpenRouter fallback is active.",
+            readiness_state=READINESS_FALLBACK,
+            fallback_activated=result.fallback_activated,
+            fallback_provider=result.fallback_provider,
+            fallback_reason=result.fallback_reason,
+            primary_provider_error=result.primary_provider_error,
+        )
 
     inst = result.instance
     provider_inst = PROVIDER_MAP[inst.provider]()
@@ -164,36 +244,31 @@ async def ensure_active_endpoint(result: GpuProvisionResult) -> GpuProvisionResu
             primary_provider_error=detail,
         )
 
-    if current.status not in ACTIVE_STATUSES:
+    if current.status not in ACTIVE_STATUSES and not current.endpoint_url:
         return _fallback_result(
             instance_name=inst.name,
             reason=f"{inst.provider.value} status is '{current.status}'",
             primary_provider_error=f"status={current.status}",
         )
 
+    current = hydrate_instance_runtime_metadata(current, harness_profile_id=inst.harness_profile_id)
+
     if current.endpoint_url:
-        probe_url = f"{current.endpoint_url.rstrip('/')}/health"
-        try:
-            async with httpx.AsyncClient(timeout=8) as client:
-                resp = await client.get(probe_url)
-            if resp.status_code >= 400:
-                return _fallback_result(
-                    instance_name=inst.name,
-                    reason=f"{inst.provider.value} endpoint health check failed ({resp.status_code})",
-                    primary_provider_error=f"http_status={resp.status_code}",
-                )
-        except Exception as exc:
-            detail = classify_http_error(exc)
+        probe = await probe_openai_compatible_endpoint(
+            current,
+            expected_model_id=current.served_model_name or current.model_repo_id or None,
+        )
+        if probe.classification != ProbeClassification.READY:
             return _fallback_result(
                 instance_name=inst.name,
-                reason=f"{inst.provider.value} endpoint health check error: {detail}",
-                primary_provider_error=detail,
+                reason=f"{inst.provider.value} endpoint probe returned {probe.classification.value}: {probe.detail}",
+                primary_provider_error=f"{probe.classification.value}: {probe.detail}",
             )
 
-    return GpuProvisionResult(
-        success=True,
+    return _result_from_instance(
         instance=current,
         message=result.message or "Instance is healthy.",
+        readiness_state=READINESS_VERIFIED,
         fallback_activated=result.fallback_activated,
         fallback_provider=result.fallback_provider,
         fallback_reason=result.fallback_reason,
@@ -211,6 +286,9 @@ async def run_skill(
     provider: str | None = None,
     hardware_slug: str | None = None,
     model_repo_id: str | None = None,
+    deployment_profile_id: str | None = None,
+    model_profile_id: str | None = None,
+    harness_profile_id: str | None = None,
 ) -> GpuProvisionResult:
     """
     Provision a GPU instance and load a model.
@@ -219,11 +297,13 @@ async def run_skill(
     Interactive:  omit those three — presents selection menus and confirmation.
     """
     from scheduler import (
+        schedule_readiness_watch,
         schedule_fleet_monitoring,
         schedule_ttl,
         schedule_uptime_report,
         schedule_stuck_watchdog,
     )
+    from monitor import monitor_instance_once
 
     max_hours = max_deployment_hours or settings.max_deployment_hours
     agent_mode = all(x is not None for x in (provider, hardware_slug, model_repo_id))
@@ -243,13 +323,25 @@ async def run_skill(
             if provider_key == Provider.OPENROUTER:
                 return _fallback_result(instance_name, "OpenRouter selected explicitly by caller.")
             hardware = await _resolve_hardware(provider_key, hardware_slug)
-            model = _resolve_model(hardware, model_repo_id)
+            selection = None
+            try:
+                model = _resolve_model(hardware, model_repo_id)
+            except ValueError:
+                model, selection = _profile_backed_model_recommendation(
+                    provider_key=provider_key,
+                    hardware=hardware,
+                    model_repo_id=model_repo_id,
+                    model_profile_id=model_profile_id or "",
+                    deployment_profile_id=deployment_profile_id or "",
+                    harness_profile_id=harness_profile_id or "",
+                )
         except (ValueError, KeyError) as exc:
             return GpuProvisionResult(success=False, message=str(exc))
     else:
         provider_key = _pick_provider()
         hardware = await _pick_hardware(provider_key)
         model = _pick_model(hardware)
+        selection = None
 
         print("\n── Summary ──────────────────────────────────")
         print(f"  Provider  : {provider_key.value}")
@@ -261,6 +353,25 @@ async def run_skill(
 
         if input("\nProceed? [y/N]: ").strip().lower() != "y":
             return GpuProvisionResult(success=False, message="Cancelled by user.")
+
+    if not agent_mode:
+        selection = resolve_runtime_selection(
+            provider=provider_key,
+            hardware_slug=hardware.slug,
+            model_repo_id=model.repo_id,
+            model_profile_id=model_profile_id or "",
+            deployment_profile_id=deployment_profile_id or "",
+            harness_profile_id=harness_profile_id or "",
+        )
+    elif selection is None:
+        selection = resolve_runtime_selection(
+            provider=provider_key,
+            hardware_slug=hardware.slug,
+            model_repo_id=model.repo_id,
+            model_profile_id=model_profile_id or "",
+            deployment_profile_id=deployment_profile_id or "",
+            harness_profile_id=harness_profile_id or "",
+        )
 
     # ── Guardrail 1: pre-flight cost estimate ──────────────────────────────────
     estimated_cost = max_hours * hardware.price_per_hour
@@ -284,10 +395,11 @@ async def run_skill(
         for inst in existing:
             if inst.name == instance_name and inst.status in ACTIVE_STATUSES:
                 logger.info("[Guard] '%s' already exists (status=%s) — returning it.", instance_name, inst.status)
-                return GpuProvisionResult(
-                    success=True,
+                inst = apply_runtime_selection(inst, selection)
+                return _result_from_instance(
                     instance=inst,
                     message=f"Existing instance returned (status={inst.status}).",
+                    readiness_state=READINESS_PROVISIONED,
                 )
 
         # Concurrency cap: reject if too many instances already live
@@ -312,6 +424,9 @@ async def run_skill(
         instance_name=instance_name,
         region=region,
         max_deployment_hours=max_hours,
+        deployment_profile_id=selection.deployment_profile.id,
+        model_profile_id=selection.model_profile.id,
+        harness_profile_id=selection.harness_profile.id,
     )
 
     logger.info("Provisioning instance '%s' on %s...", instance_name, provider_key.value)
@@ -333,6 +448,7 @@ async def run_skill(
                 f"{provider_key.value} provider returned invalid instance payload: {exc}"
             ),
         )
+    instance = apply_runtime_selection(instance, selection)
 
     # Programmatic: schedule TTL + uptime + watchdog — never delegated to the LLM
     schedule_ttl(instance, max_hours)
@@ -343,18 +459,46 @@ async def run_skill(
         check_interval_minutes=settings.watchdog_check_interval_minutes,
     )
     if settings.monitor_enabled:
+        continue_watch = await monitor_instance_once(
+            provider_key,
+            instance.id,
+            runtime_alert_minutes=settings.monitor_runtime_alert_minutes,
+            auto_stop_minutes=settings.monitor_auto_stop_minutes,
+            readiness_timeout_minutes=settings.monitor_readiness_timeout_minutes,
+            stale_after_minutes=settings.monitor_stale_after_minutes,
+            unhealthy_auto_stop_minutes=settings.monitor_unhealthy_auto_stop_minutes,
+        )
+        if continue_watch:
+            schedule_readiness_watch(
+                instance,
+                poll_seconds=settings.monitor_readiness_poll_seconds,
+                runtime_alert_minutes=settings.monitor_runtime_alert_minutes,
+                auto_stop_minutes=settings.monitor_auto_stop_minutes,
+                readiness_timeout_minutes=settings.monitor_readiness_timeout_minutes,
+                stale_after_minutes=settings.monitor_stale_after_minutes,
+                unhealthy_auto_stop_minutes=settings.monitor_unhealthy_auto_stop_minutes,
+            )
         schedule_fleet_monitoring(
             interval_minutes=settings.monitor_interval_minutes,
             runtime_alert_minutes=settings.monitor_runtime_alert_minutes,
             auto_stop_minutes=settings.monitor_auto_stop_minutes,
+            readiness_timeout_minutes=settings.monitor_readiness_timeout_minutes,
+            stale_after_minutes=settings.monitor_stale_after_minutes,
+            unhealthy_auto_stop_minutes=settings.monitor_unhealthy_auto_stop_minutes,
         )
 
     logger.info("Instance '%s' created [status: %s]", instance.name, instance.status)
     if instance.endpoint_url:
         logger.info("Endpoint URL: %s", instance.endpoint_url)
 
-    result = GpuProvisionResult(success=True, instance=instance, message="Instance created successfully.")
-    return await ensure_active_endpoint(result)
+    message = "Instance created successfully."
+    if settings.monitor_enabled:
+        message = "Instance created; readiness monitoring is active."
+    return _result_from_instance(
+        instance=instance,
+        message=message,
+        readiness_state=READINESS_PROVISIONED,
+    )
 
 
 def run_skill_sync(**kwargs) -> GpuProvisionResult:
@@ -370,3 +514,15 @@ def run_skill_sync(**kwargs) -> GpuProvisionResult:
             return pool.submit(asyncio.run, run_skill(**kwargs)).result()
     except RuntimeError:
         return asyncio.run(run_skill(**kwargs))
+
+
+def ensure_active_endpoint_sync(result: GpuProvisionResult) -> GpuProvisionResult:
+    """
+    Sync wrapper for ensure_active_endpoint(). Mirrors run_skill_sync behavior.
+    """
+    try:
+        asyncio.get_running_loop()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, ensure_active_endpoint(result)).result()
+    except RuntimeError:
+        return asyncio.run(ensure_active_endpoint(result))

@@ -6,6 +6,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from config import settings
 from models import GpuProvisionRequest, HardwareTier, InstanceInfo, Provider
+from profile_registry import apply_runtime_selection, hydrate_instance_runtime_metadata, resolve_runtime_selection
 from providers.base import GpuProvider
 
 HF_API_BASE = "https://api.endpoints.huggingface.cloud/v2"
@@ -42,6 +43,14 @@ class HuggingFaceProvider(GpuProvider):
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def create_instance(self, request: GpuProvisionRequest) -> InstanceInfo:
+        selection = resolve_runtime_selection(
+            provider=request.provider,
+            hardware_slug=request.hardware_slug,
+            model_repo_id=request.model_repo_id,
+            model_profile_id=request.model_profile_id,
+            deployment_profile_id=request.deployment_profile_id,
+            harness_profile_id=request.harness_profile_id,
+        )
         # "nvidia-t4-x1" → instanceType="nvidia-t4", instanceSize="x1"
         *type_parts, instance_size = request.hardware_slug.split("-")
         instance_type = "-".join(type_parts)
@@ -74,7 +83,8 @@ class HuggingFaceProvider(GpuProvider):
             )
             resp.raise_for_status()
 
-        return self._parse_endpoint(resp.json())
+        instance = self._parse_endpoint(resp.json())
+        return apply_runtime_selection(instance, selection)
 
     async def get_instance(self, instance_id: str) -> InstanceInfo:
         async with httpx.AsyncClient() as client:
@@ -84,7 +94,7 @@ class HuggingFaceProvider(GpuProvider):
                 timeout=15.0,
             )
             resp.raise_for_status()
-        return self._parse_endpoint(resp.json())
+        return hydrate_instance_runtime_metadata(self._parse_endpoint(resp.json()))
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def destroy_instance(self, instance_id: str) -> bool:
@@ -104,7 +114,7 @@ class HuggingFaceProvider(GpuProvider):
                 timeout=15.0,
             )
             resp.raise_for_status()
-        return [self._parse_endpoint(e) for e in resp.json().get("items", [])]
+        return [hydrate_instance_runtime_metadata(self._parse_endpoint(e)) for e in resp.json().get("items", [])]
 
     def _parse_endpoint(self, data: dict) -> InstanceInfo:
         compute = data.get("compute", {})

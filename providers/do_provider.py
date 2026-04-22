@@ -15,6 +15,11 @@ from do_bootstrap import (
     resolve_token,
 )
 from models import GpuProvisionRequest, HardwareTier, InstanceInfo, Provider
+from profile_registry import (
+    apply_runtime_selection,
+    hydrate_instance_runtime_metadata,
+    resolve_runtime_selection,
+)
 from providers.base import GpuProvider
 from remote_vllm import DEFAULT_VLLM_PORT, deploy_vllm_remote
 
@@ -37,27 +42,92 @@ def _load_model_map() -> dict[str, str]:
     return {str(k): str(v) for k, v in raw.items()}
 
 
-def _save_model_map(model_map: dict[str, str]) -> None:
+def _load_runtime_meta_map() -> dict[str, dict[str, object]]:
+    raw = _load_state().get("droplet_runtime_meta", {})
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, dict[str, object]] = {}
+    for key, value in raw.items():
+        if isinstance(value, dict):
+            result[str(key)] = value
+    return result
+
+
+def _runtime_meta_from_instance(instance: InstanceInfo) -> dict[str, object]:
+    return {
+        "model_repo_id": instance.model_repo_id,
+        "served_model_name": instance.served_model_name,
+        "runtime_kind": instance.runtime_kind,
+        "endpoint_class": instance.endpoint_class,
+        "managed_by_provider": instance.managed_by_provider,
+        "deployment_profile_id": instance.deployment_profile_id,
+        "model_profile_id": instance.model_profile_id,
+        "harness_profile_id": instance.harness_profile_id,
+    }
+
+
+def _save_runtime_metadata(instance: InstanceInfo) -> None:
     state = _load_state()
-    state["droplet_models"] = model_map
+    droplet_models = state.get("droplet_models", {})
+    if not isinstance(droplet_models, dict):
+        droplet_models = {}
+    droplet_models[str(instance.id)] = instance.model_repo_id
+    state["droplet_models"] = droplet_models
+
+    runtime_meta = state.get("droplet_runtime_meta", {})
+    if not isinstance(runtime_meta, dict):
+        runtime_meta = {}
+    runtime_meta[str(instance.id)] = _runtime_meta_from_instance(instance)
+    state["droplet_runtime_meta"] = runtime_meta
     _save_state(state)
 
 
-def _record_model_repo_id(droplet_id: str, model_repo_id: str) -> None:
-    model_map = _load_model_map()
-    model_map[droplet_id] = model_repo_id
-    _save_model_map(model_map)
+def _clear_runtime_metadata(droplet_id: str) -> None:
+    state = _load_state()
+    droplet_models = state.get("droplet_models", {})
+    if isinstance(droplet_models, dict) and droplet_id in droplet_models:
+        del droplet_models[droplet_id]
+        state["droplet_models"] = droplet_models
 
-
-def _clear_model_repo_id(droplet_id: str) -> None:
-    model_map = _load_model_map()
-    if droplet_id in model_map:
-        del model_map[droplet_id]
-        _save_model_map(model_map)
+    runtime_meta = state.get("droplet_runtime_meta", {})
+    if isinstance(runtime_meta, dict) and droplet_id in runtime_meta:
+        del runtime_meta[droplet_id]
+        state["droplet_runtime_meta"] = runtime_meta
+    _save_state(state)
 
 
 def _lookup_model_repo_id(droplet_id: str) -> str:
+    runtime_meta = _load_runtime_meta_map().get(droplet_id, {})
+    model_repo_id = str(runtime_meta.get("model_repo_id", "")).strip()
+    if model_repo_id:
+        return model_repo_id
     return _load_model_map().get(droplet_id, "")
+
+
+def _lookup_runtime_meta(droplet_id: str) -> dict[str, object]:
+    return _load_runtime_meta_map().get(droplet_id, {})
+
+
+def _apply_saved_runtime_metadata(instance: InstanceInfo, saved_meta: dict[str, object]) -> InstanceInfo:
+    if not saved_meta:
+        return hydrate_instance_runtime_metadata(instance)
+    payload = instance.model_dump()
+    for key in (
+        "model_repo_id",
+        "served_model_name",
+        "runtime_kind",
+        "endpoint_class",
+        "managed_by_provider",
+        "deployment_profile_id",
+        "model_profile_id",
+        "harness_profile_id",
+    ):
+        if key in saved_meta:
+            payload[key] = saved_meta[key]
+    hydrated = InstanceInfo.model_validate(payload)
+    if not hydrated.runtime_kind:
+        return hydrate_instance_runtime_metadata(hydrated)
+    return hydrated
 
 
 def _to_instance_info(d: DropletInfo, model_repo_id: str = "", endpoint_url: str = "") -> InstanceInfo:
@@ -74,7 +144,6 @@ def _to_instance_info(d: DropletInfo, model_repo_id: str = "", endpoint_url: str
 
 
 class DigitalOceanProvider(GpuProvider):
-
     def __init__(self) -> None:
         self.token = resolve_token()
 
@@ -83,7 +152,6 @@ class DigitalOceanProvider(GpuProvider):
             resp = await client.get(f"{DO_API}/sizes?per_page=200")
             resp.raise_for_status()
 
-        # DO API doesn't expose VRAM; map known slugs manually
         _VRAM_MAP = {
             "gpu-h100x1-80gb": 80,
             "gpu-h200x1-141gb": 141,
@@ -113,6 +181,14 @@ class DigitalOceanProvider(GpuProvider):
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=5, max=30))
     async def create_instance(self, request: GpuProvisionRequest) -> InstanceInfo:
+        selection = resolve_runtime_selection(
+            provider=request.provider,
+            hardware_slug=request.hardware_slug,
+            model_repo_id=request.model_repo_id,
+            model_profile_id=request.model_profile_id,
+            deployment_profile_id=request.deployment_profile_id,
+            harness_profile_id=request.harness_profile_id,
+        )
         droplet = await create_droplet(
             size=request.hardware_slug,
             name=request.instance_name,
@@ -122,9 +198,13 @@ class DigitalOceanProvider(GpuProvider):
             model_id=request.model_repo_id,
             ssh_key_path=SSH_KEY_PATH,
             hf_token=settings.hf_token or None,
+            deployment_profile=selection.deployment_profile,
+            model_profile=selection.model_profile,
         )
-        _record_model_repo_id(str(droplet.id), request.model_repo_id)
-        return _to_instance_info(droplet, request.model_repo_id, endpoint_url=endpoint_url)
+        instance = _to_instance_info(droplet, request.model_repo_id, endpoint_url=endpoint_url)
+        instance = apply_runtime_selection(instance, selection)
+        _save_runtime_metadata(instance)
+        return instance
 
     async def get_instance(self, instance_id: str) -> InstanceInfo:
         async with httpx.AsyncClient(headers=_headers(self.token), timeout=15) as client:
@@ -133,7 +213,7 @@ class DigitalOceanProvider(GpuProvider):
         d = resp.json()["droplet"]
         nets = d.get("networks", {}).get("v4", [])
         ip = next((n["ip_address"] for n in nets if n["type"] == "public"), "")
-        return InstanceInfo(
+        instance = InstanceInfo(
             id=str(d["id"]),
             name=d["name"],
             provider=Provider.DIGITALOCEAN,
@@ -143,12 +223,13 @@ class DigitalOceanProvider(GpuProvider):
             endpoint_url=_build_endpoint_url(ip),
             region=d["region"]["slug"],
         )
+        return _apply_saved_runtime_metadata(instance, _lookup_runtime_meta(str(d["id"])))
 
     async def destroy_instance(self, instance_id: str) -> bool:
         async with httpx.AsyncClient(headers=_headers(self.token), timeout=15) as client:
             resp = await client.delete(f"{DO_API}/droplets/{instance_id}")
         if resp.status_code == 204:
-            _clear_model_repo_id(instance_id)
+            _clear_runtime_metadata(instance_id)
             return True
         return False
 
@@ -160,7 +241,7 @@ class DigitalOceanProvider(GpuProvider):
         for d in resp.json().get("droplets", []):
             nets = d.get("networks", {}).get("v4", [])
             ip = next((n["ip_address"] for n in nets if n["type"] == "public"), "")
-            result.append(InstanceInfo(
+            instance = InstanceInfo(
                 id=str(d["id"]),
                 name=d["name"],
                 provider=Provider.DIGITALOCEAN,
@@ -169,5 +250,6 @@ class DigitalOceanProvider(GpuProvider):
                 status=_normalize_status(d["status"]),
                 endpoint_url=_build_endpoint_url(ip),
                 region=d["region"]["slug"],
-            ))
+            )
+            result.append(_apply_saved_runtime_metadata(instance, _lookup_runtime_meta(str(d["id"]))))
         return result

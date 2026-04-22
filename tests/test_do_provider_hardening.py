@@ -40,7 +40,7 @@ class TestDoProviderCreate:
 
         with patch("providers.do_provider.resolve_token", return_value="dop_v1_test"), \
              patch("providers.do_provider.create_droplet", new=AsyncMock(return_value=droplet)), \
-             patch("providers.do_provider.deploy_vllm_remote", new=AsyncMock(return_value="http://1.2.3.4:8000")), \
+             patch("providers.do_provider.deploy_vllm_remote", new=AsyncMock(return_value="http://1.2.3.4:8000")) as deploy_remote, \
              patch("providers.do_provider._load_state", return_value={}), \
              patch("providers.do_provider._save_state") as save_state:
             provider = DigitalOceanProvider()
@@ -49,7 +49,19 @@ class TestDoProviderCreate:
         assert inst.status == "running"
         assert inst.endpoint_url == "http://1.2.3.4:8000"
         assert inst.model_repo_id == req.model_repo_id
-        save_state.assert_called_with({"droplet_models": {"123": req.model_repo_id}})
+        assert inst.runtime_kind == "vllm"
+        assert inst.endpoint_class == "openai-compatible"
+        assert inst.deployment_profile_id == "digitalocean-vllm-generic"
+        assert inst.model_profile_id == "google-gemma-2-2b-it"
+        assert inst.harness_profile_id == "openai-compatible-generic"
+        assert inst.served_model_name == req.model_repo_id
+        call = deploy_remote.await_args
+        assert call.kwargs["deployment_profile"].id == "digitalocean-vllm-generic"
+        assert call.kwargs["model_profile"].id == "google-gemma-2-2b-it"
+        saved_state = save_state.call_args.args[0]
+        assert saved_state["droplet_models"] == {"123": req.model_repo_id}
+        assert saved_state["droplet_runtime_meta"]["123"]["runtime_kind"] == "vllm"
+        assert saved_state["droplet_runtime_meta"]["123"]["deployment_profile_id"] == "digitalocean-vllm-generic"
 
 
 @dataclass
@@ -130,7 +142,21 @@ class TestDoProviderReadAndDestroy:
              patch("providers.do_provider.httpx.AsyncClient", side_effect=client_factory), \
              patch(
                  "providers.do_provider._load_state",
-                 return_value={"droplet_models": {"321": "google/gemma-2-2b-it", "322": "meta-llama/Llama-3.1-8B-Instruct"}},
+                 return_value={
+                     "droplet_models": {"321": "google/gemma-2-2b-it", "322": "meta-llama/Llama-3.1-8B-Instruct"},
+                     "droplet_runtime_meta": {
+                         "321": {
+                             "model_repo_id": "google/gemma-2-2b-it",
+                             "runtime_kind": "vllm",
+                             "endpoint_class": "openai-compatible",
+                             "managed_by_provider": False,
+                             "deployment_profile_id": "digitalocean-vllm-generic",
+                             "model_profile_id": "google-gemma-2-2b-it",
+                             "harness_profile_id": "openai-compatible-generic",
+                             "served_model_name": "google/gemma-2-2b-it",
+                         }
+                     },
+                 },
              ):
             provider = DigitalOceanProvider()
             got = run(provider.get_instance("321"))
@@ -139,6 +165,8 @@ class TestDoProviderReadAndDestroy:
         assert got.status == "running"
         assert got.endpoint_url == "http://2.3.4.5:8000"
         assert got.model_repo_id == "google/gemma-2-2b-it"
+        assert got.runtime_kind == "vllm"
+        assert got.deployment_profile_id == "digitalocean-vllm-generic"
 
         assert len(listed) == 2
         assert listed[0].status == "running"
@@ -146,18 +174,26 @@ class TestDoProviderReadAndDestroy:
         assert listed[0].endpoint_url == "http://2.3.4.5:8000"
         assert listed[1].endpoint_url == "http://6.7.8.9:8000"
         assert listed[1].model_repo_id == "meta-llama/Llama-3.1-8B-Instruct"
+        assert listed[1].runtime_kind == "vllm"
+        assert listed[1].endpoint_class == "openai-compatible"
 
     def test_destroy_success_cleans_saved_model_mapping(self):
         delete_resp = _FakeResponse(204, {})
         with patch("providers.do_provider.resolve_token", return_value="dop_v1_test"), \
              patch("providers.do_provider.httpx.AsyncClient", return_value=_FakeAsyncClient(response_delete=delete_resp)), \
-             patch("providers.do_provider._load_state", return_value={"droplet_models": {"123": "google/gemma-2-2b-it"}}), \
+             patch(
+                 "providers.do_provider._load_state",
+                 return_value={
+                     "droplet_models": {"123": "google/gemma-2-2b-it"},
+                     "droplet_runtime_meta": {"123": {"runtime_kind": "vllm"}},
+                 },
+             ), \
              patch("providers.do_provider._save_state") as save_state:
             provider = DigitalOceanProvider()
             destroyed = run(provider.destroy_instance("123"))
 
         assert destroyed is True
-        save_state.assert_called_with({"droplet_models": {}})
+        save_state.assert_called_with({"droplet_models": {}, "droplet_runtime_meta": {}})
 
 
 class _FakeProc:
