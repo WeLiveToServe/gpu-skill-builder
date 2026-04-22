@@ -83,18 +83,30 @@ class DigitalOceanProvider(GpuProvider):
             resp = await client.get(f"{DO_API}/sizes?per_page=200")
             resp.raise_for_status()
 
+        # DO API doesn't expose VRAM; map known slugs manually
+        _VRAM_MAP = {
+            "gpu-h100x1-80gb": 80,
+            "gpu-h200x1-141gb": 141,
+            "gpu-h100x8-640gb": 640,
+            "gpu-h200x8-1128gb": 1128,
+            "gpu-l40sx1-48gb": 48,
+            "gpu-a100x1-80gb": 80,
+            "gpu-mi300x1-192gb": 192,
+        }
         tiers: list[HardwareTier] = []
         for size in resp.json().get("sizes", []):
-            if "gpu" not in size["slug"] or not size.get("regions"):
+            if "gpu" not in size["slug"]:
                 continue
+            regions = size.get("regions") or []
+            slug = size["slug"]
             tiers.append(
                 HardwareTier(
-                    slug=size["slug"],
-                    display_name=size.get("description", size["slug"]),
-                    vram_gb=0,
+                    slug=slug,
+                    display_name=size.get("description", slug),
+                    vram_gb=_VRAM_MAP.get(slug, 0),
                     price_per_hour=size.get("price_hourly", 0.0),
                     provider=Provider.DIGITALOCEAN,
-                    region=size["regions"][0],
+                    region=regions[0] if regions else "",
                 )
             )
         return tiers

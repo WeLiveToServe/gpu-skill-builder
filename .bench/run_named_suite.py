@@ -3,6 +3,8 @@ import argparse
 import importlib.util
 import json
 import os
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple
@@ -11,6 +13,7 @@ import harness_benchmark as hb
 
 
 Task = Dict[str, Any]
+DEFAULT_EVAL_TIMEOUT_S = int(os.environ.get("BENCH_EVAL_TIMEOUT_S", "20"))
 
 
 def _load_module(module_path: Path):
@@ -35,13 +38,82 @@ def _suite_module_path(suite_id: str) -> Path:
     return mapping[suite_id]
 
 
-def _run_suite(suite_id: str, harness: str, timeout_s: int = 600) -> Dict[str, Any]:
+def _evaluate_code_with_timeout(module_path: Path, task_id: str, code: str, eval_timeout_s: int) -> Tuple[bool, List[str]]:
+    helper = r"""
+import importlib.util
+import json
+import sys
+
+module_path = sys.argv[1]
+task_id = sys.argv[2]
+code = sys.stdin.read()
+
+spec = importlib.util.spec_from_file_location("bench_suite_module", module_path)
+if spec is None or spec.loader is None:
+    print(json.dumps({"passed": False, "errors": [f"Could not load module: {module_path}"]}))
+    raise SystemExit(0)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+tasks = getattr(module, "TASKS")
+evaluate_code = getattr(module, "evaluate_code")
+task = None
+for t in tasks:
+    if t.get("id") == task_id:
+        task = t
+        break
+
+if task is None:
+    print(json.dumps({"passed": False, "errors": [f"Unknown task_id: {task_id}"]}))
+    raise SystemExit(0)
+
+passed, errors = evaluate_code(task, code)
+if not isinstance(errors, list):
+    errors = [str(errors)]
+print(json.dumps({"passed": bool(passed), "errors": errors}))
+"""
+    cmd = [sys.executable, "-c", helper, str(module_path), task_id]
+    try:
+        proc = subprocess.run(
+            cmd,
+            input=code,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=eval_timeout_s,
+            shell=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, [f"Evaluation timeout after {eval_timeout_s}s."]
+
+    if proc.returncode != 0:
+        err = (proc.stderr or "").strip()
+        if not err:
+            err = "no stderr output"
+        return False, [f"Evaluation subprocess failed (exit={proc.returncode}): {err[:500]}"]
+
+    lines = [ln.strip() for ln in (proc.stdout or "").splitlines() if ln.strip()]
+    for ln in reversed(lines):
+        try:
+            payload = json.loads(ln)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            passed = bool(payload.get("passed", False))
+            errors = payload.get("errors", [])
+            if not isinstance(errors, list):
+                errors = [str(errors)]
+            return passed, [str(e) for e in errors]
+    return False, ["Evaluation subprocess produced no parseable JSON result."]
+
+
+def _run_suite(suite_id: str, harness: str, timeout_s: int = 600, eval_timeout_s: int = DEFAULT_EVAL_TIMEOUT_S) -> Dict[str, Any]:
     module_path = _suite_module_path(suite_id)
     module = _load_module(module_path)
 
     tasks: List[Task] = getattr(module, "TASKS")
     build_prompt: Callable[[Task], str] = getattr(module, "build_prompt")
-    evaluate_code: Callable[[Task, str], Tuple[bool, List[str]]] = getattr(module, "evaluate_code")
 
     run_ts = int(time.time())
     run_dir = hb.RESULTS_DIR / f"run-{run_ts}-{harness}-gemma4-{suite_id}"
@@ -54,7 +126,7 @@ def _run_suite(suite_id: str, harness: str, timeout_s: int = 600) -> Dict[str, A
         run_info = hb.run_harness(harness, prompt, codex_result_file)
         response_text = run_info.get("response_text", "")
         code = hb.extract_code(response_text)
-        passed, errors = evaluate_code(task, code)
+        passed, errors = _evaluate_code_with_timeout(module_path, task["id"], code, eval_timeout_s)
 
         hb.save_text(run_dir / "raw" / harness / f"{task['id']}.stdout.txt", run_info["stdout"])
         hb.save_text(run_dir / "raw" / harness / f"{task['id']}.stderr.txt", run_info["stderr"])
@@ -99,6 +171,7 @@ def _run_suite(suite_id: str, harness: str, timeout_s: int = 600) -> Dict[str, A
             "codex_model": hb.CODEX_MODEL,
             "claude_model": hb.CLAUDE_MODEL,
             "timeout_s": timeout_s,
+            "eval_timeout_s": eval_timeout_s,
             "module_path": str(module_path),
         },
         "results": results,
@@ -115,13 +188,14 @@ def main() -> int:
     parser.add_argument("--harness", required=True, choices=["qwen", "opencode", "codex", "claude", "goose"])
     parser.add_argument("--suites", required=True, help="Comma-separated suite IDs (e.g., medium60,hard80,hard90).")
     parser.add_argument("--timeout-s", type=int, default=600)
+    parser.add_argument("--eval-timeout-s", type=int, default=DEFAULT_EVAL_TIMEOUT_S)
     parser.add_argument("--ledger", default="", help="Optional path to write a JSON run ledger.")
     args = parser.parse_args()
 
     suites = [s.strip() for s in args.suites.split(",") if s.strip()]
     outputs = []
     for suite_id in suites:
-        outputs.append(_run_suite(suite_id, args.harness, args.timeout_s))
+        outputs.append(_run_suite(suite_id, args.harness, args.timeout_s, args.eval_timeout_s))
 
     if args.ledger:
         ledger_path = Path(args.ledger)

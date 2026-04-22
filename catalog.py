@@ -22,7 +22,8 @@ _CATALOG: dict[int, list[ModelRecommendation]] = {
         ModelRecommendation(repo_id="mistralai/Mistral-7B-Instruct-v0.3",     display_name="Mistral 7B Instruct",     size_params="7B",    vram_required_gb=14),
         ModelRecommendation(repo_id="Qwen/Qwen2.5-7B-Instruct",               display_name="Qwen 2.5 7B Instruct",   size_params="7B",    vram_required_gb=14),
     ],
-    80: [  # NVIDIA A100 80GB
+    80: [  # NVIDIA H100/A100 80GB
+        ModelRecommendation(repo_id="openai/gpt-oss-120b",                    display_name="Codex OSS 120B (MXFP4)",  size_params="120B",  vram_required_gb=75, notes="MXFP4 MoE weights; fits single 80GB GPU"),
         ModelRecommendation(repo_id="meta-llama/Meta-Llama-3.1-70B-Instruct", display_name="Llama 3.1 70B Instruct",  size_params="70B",   vram_required_gb=70),
         ModelRecommendation(repo_id="meta-llama/Llama-3.3-70B-Instruct",      display_name="Llama 3.3 70B Instruct",  size_params="70B",   vram_required_gb=70),
         ModelRecommendation(repo_id="Qwen/Qwen2.5-72B-Instruct",              display_name="Qwen 2.5 72B Instruct",   size_params="72B",   vram_required_gb=72, notes="tight; use fp8"),
