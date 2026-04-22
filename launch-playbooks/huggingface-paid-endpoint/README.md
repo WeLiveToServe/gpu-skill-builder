@@ -1,6 +1,6 @@
 # Hugging Face Paid Endpoint
 
-Last updated: 2026-04-17
+Last updated: 2026-04-22
 
 Current state:
 - No Hugging Face paid inference endpoint is currently deployed/validated from this repo.
@@ -14,3 +14,7 @@ Coding harness advice:
 - `qwen-code`: not yet validated against HF paid endpoints.
 - `codex-open-source`: not yet validated against HF paid endpoints.
 - `claude-open-source`: not yet validated against HF paid endpoints.
+
+Important scope note:
+- this folder is a runbook placeholder
+- the current in-code Hugging Face provider is the HF Inference Endpoints path implemented in `providers/hf_provider.py`

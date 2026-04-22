@@ -1,6 +1,6 @@
 # VastAI
 
-Last updated: 2026-04-17
+Last updated: 2026-04-22
 
 Current state:
 - No VastAI connection, deployment, or endpoint test has been executed from this repo yet.
@@ -13,3 +13,7 @@ Coding harness advice:
 - `qwen-code`: not yet validated against VastAI.
 - `codex-open-source`: not yet validated against VastAI.
 - `claude-open-source`: not yet validated against VastAI.
+
+Important scope note:
+- this folder is a runbook placeholder only
+- VastAI is not a current `skill.py` provider integration

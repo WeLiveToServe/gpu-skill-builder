@@ -1,10 +1,11 @@
 # Claude Open-Source CLI
 
-Last updated: 2026-04-18
+Last updated: 2026-04-22
 
 Current state:
 - Validated against live DigitalOcean H200 endpoint serving `google/gemma-4-31B-it`.
 - Reproducible suite runner now available: `.bench/run_named_suite.py`.
+- This file is a dated benchmark runbook, not a repo-wide provider support matrix.
 
 Provider-specific advice:
 - `digitalocean`: validated with claude-open-source through local SSH tunnel (`127.0.0.1:18000 -> <droplet>:8000`).
@@ -25,7 +26,7 @@ Validated endpoint:
 Tunnel command:
 
 ```powershell
-ssh -i "$HOME\.ssh\do_agent_ed25519" -o StrictHostKeyChecking=no -N -L 18000:127.0.0.1:8000 root@165.245.137.40
+ssh -i "$HOME\.ssh\do_agent_ed25519" -o StrictHostKeyChecking=no -N -L 18000:127.0.0.1:8000 root@<DROPLET_IP>
 ```
 
 Model check:

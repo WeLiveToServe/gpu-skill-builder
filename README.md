@@ -5,63 +5,112 @@ A reusable, agent-callable skill whose core purpose is to:
 2. Load an open-source model that fits the selected GPU.
 3. Wire the resulting model endpoint into open-source coding harnesses with correct API configuration.
 
-Works standalone (interactive CLI) or as a Python library called by an orchestrating LLM agent.
+Works standalone as an interactive CLI or as a Python library called by another agent.
 
-> Maintainer directive: The core purpose above is stable and must not be changed by agents unless the repo owner explicitly directs that change. Development stage details, supported providers, and coding-harness availability can be updated over time.
+> Maintainer directive: The core purpose above is stable and must not be changed by agents unless the repo owner explicitly directs that change. Development stage details, supported providers, and harness availability can change over time.
 
----
+## Current State
 
-## What it does
+- Supported runtime providers in code: `huggingface`, `digitalocean`, `modal`, and `openrouter` as a fallback lane.
+- Profile-driven runtime selection is now implemented through committed JSON manifests under `profiles/`, with typed resolution for model, deployment, and harness contracts.
+- `run_skill()` is a fast-create path. It returns after infrastructure creation and provider handoff; it does **not** promise the endpoint is fully ready for traffic.
+- `ensure_active_endpoint(result)` is the strict pre-use guard. It probes `/health`, `/v1/models`, and a fixed smoke prompt before trusting the endpoint.
+- `gpu-skill-builder` now emits a non-secret harness handoff manifest in results so sibling harness repos can keep `.env` files local while consuming resolved endpoint metadata.
+- Optional always-on monitoring is implemented with deterministic Telegram alerts, readiness watches, stale-endpoint detection, and configurable auto-stop guardrails.
+- The research package under [docs/research/production-grade-gpu-deployment](docs/research/production-grade-gpu-deployment) is **draft planning material** and is not the runtime source of truth today.
+- Current validation status: the profile-driven runtime and harness-handoff iteration is **untested on live providers and harness runs** in this repo cycle. The automated test suite is green, but treat the current manifests and renderers as unvalidated until we run live checks.
 
-You run it (or another agent calls it), choose a cloud provider, a GPU tier, and a
-model, and it creates a live inference endpoint with:
+## What It Does
 
-- automatic TTL (it self-destructs after a configurable number of hours)
-- uptime reporting on a fixed interval
-- a stuck-pending watchdog (kills instances that never reach `running`)
-- cost, concurrency, and idempotency guardrails to prevent runaway spend
+You run it, or another agent calls it, and the repo provisions an OpenAI-compatible inference endpoint with:
 
-The endpoint it creates is OpenAI-compatible, so it can be wired directly into
-open-source coding harnesses that support OpenAI chat completions style APIs.
+- TTL-based auto-destroy
+- periodic uptime reporting
+- stuck-pending watchdog protection
+- per-instance spend guardrails
+- concurrency and idempotency guardrails
+- optional Telegram-backed fleet monitoring and readiness tracking
 
----
+The resulting endpoint is intended for open-source coding harnesses that speak OpenAI chat-completions style APIs.
 
-## Streamlit deployment URL
+## Profiles And Handoffs
 
-Deploy this repository on Streamlit Community Cloud with:
+Runtime configuration is now split into committed JSON profile families under `profiles/`:
 
-`https://share.streamlit.io/deploy?repository=https://github.com/WeLiveToServe/gpu-skill-builder`
+- `ModelProfile`
+- `DeploymentProfile`
+- `HarnessProfile`
+- `GatewayProfile` schema only
 
-During deployment, set:
-- Branch: `main`
-- Entrypoint: `streamlit_app.py`
+Current runtime truth:
 
-If you leave the custom subdomain blank, Streamlit will assign a generated app URL
-on `*.streamlit.app`. You can optionally set a custom subdomain (for example,
-`gpu-skill-builder.streamlit.app`) if available.
+- `profiles/` is the canonical runtime contract source for profile-driven launches.
+- the research docs remain draft guidance and do not generate runtime config.
+- harness `.env` files stay local to each repo; this repo only emits non-secret handoff data.
 
----
+## Readiness And Monitoring
 
-## Two modes of operation
+There are two different readiness layers in the current repo:
 
-### Interactive (for humans)
+1. Provision-time checks:
+   `remote_vllm.py` waits for `/health` and validates `/v1/models` on remote `vLLM` launches used by the DigitalOcean path.
+2. Runtime readiness checks:
+   the shared probe layer validates:
+   - `GET /health`
+   - `GET /v1/models`
+   - a minimal smoke prompt (`Reply with OK`)
+
+The runtime probe classifies endpoints as:
+
+- `ready`
+- `warming`
+- `wrong_model`
+- `unhealthy`
+- `unreachable`
+- `provider_error`
+- `scaled_to_zero` for Modal
+
+If monitoring is enabled, the repo:
+
+- probes immediately after instance creation or discovery
+- keeps a `30` second readiness watch until the endpoint becomes ready or times out
+- falls back to the normal fleet-monitor cadence afterward
+- emits deterministic Telegram events on state transitions only
+- can auto-stop long-running instances and, optionally, persistently stale or unhealthy ones
+
+Current Telegram event names:
+
+- `monitor_started`
+- `instance_detected`
+- `readiness_passed`
+- `readiness_timeout`
+- `health_regressed`
+- `stale_endpoint`
+- `provider_list_failed`
+- `instance_disappeared`
+- `runtime_threshold_exceeded`
+- `auto_stop_attempted`
+
+## Two Modes Of Operation
+
+### Interactive
 
 ```bash
 PYTHONIOENCODING=utf-8 python main.py
 ```
 
-## Project Handoff Plan
+This walks through a deterministic three-step selection flow:
 
-For detailed information about completed work, cloud provider configurations, and next steps, please see the [handoff-plan.md](handoff-plan.md) document. This file contains comprehensive documentation of all research, setup, and configuration work completed to date, and should be consumed by the next agent working on this project.
+1. provider
+2. hardware tier
+3. model
 
-Walks through a three-step selection menu: provider → hardware tier → model.
-Shows a summary and asks for confirmation before spending anything.
+It shows a summary and asks for confirmation before spending anything.
 
-### Agent mode (for LLM orchestrators)
+### Agent Mode
 
 ```python
-import asyncio
-from skill import run_skill
+from skill import ensure_active_endpoint, run_skill
 
 result = await run_skill(
     instance_name="my-inference-node",
@@ -73,122 +122,29 @@ result = await run_skill(
 )
 
 if result.success:
-    print(result.instance.endpoint_url)  # ready to use
+    checked = await ensure_active_endpoint(result)
+    print(checked.instance.endpoint_url)
 ```
 
-Pass all three of `provider`, `hardware_slug`, and `model_repo_id` and every prompt
-is bypassed. The skill provisions and returns a structured result.
+Pass all three of `provider`, `hardware_slug`, and `model_repo_id` to bypass prompts.
 
----
+Important current contract:
 
-## Architecture decisions and why
+- `run_skill()` means the infrastructure path succeeded.
+- `ensure_active_endpoint()` means the endpoint passed the stricter readiness probe and is the right function to call before real model usage in long-lived sessions.
+- `result.harness_handoff` is non-secret and safe to pass to sibling harness repos; it contains resolved base URL, model name, profile IDs, and expected env key names, but no credentials.
 
-### Why not a workflow framework (Prefect, Airflow, ControlFlow)?
+## Supported Providers
 
-We evaluated these and rejected them. The provisioning flow is three fixed sequential
-steps with no branching logic — there is nothing to orchestrate. Workflow frameworks
-earn their weight when you have DAGs, retries across steps, visibility dashboards, and
-teams sharing pipelines. Here, they would require running a server just to schedule a
-single TTL job. APScheduler embedded in-process gives us DateTrigger (TTL) and
-IntervalTrigger (uptime, watchdog) with zero infrastructure.
-
-### Why not Pydantic AI or another agent framework?
-
-This skill is itself called by an LLM agent. Wrapping it in another agent framework
-would add a layer with no benefit — you'd have an agent framework calling an agent
-framework. The skill is a plain async Python function. The caller decides how to
-orchestrate it.
-
-### Why are retries in tenacity and not in the providers?
-
-Provider API calls fail transiently (rate limits, cold starts, network blips). Tenacity
-decorators sit directly on the HTTP call sites and retry with exponential backoff
-without any retry logic leaking into the calling code. The skill stays clean.
-
-### Why is model selection a static catalog and not an LLM call?
-
-Two reasons. First, correctness: a model must physically fit in the VRAM of the chosen
-hardware. An LLM making that judgment is a liability — it can hallucinate model sizes
-or get VRAM numbers wrong. Second, determinism: the same inputs should always produce
-the same valid options. The catalog (`catalog.py`) is a hand-curated VRAM-to-model
-map. The LLM's creative role is scoped to *which* model to pick from the verified list,
-not to inventing the list itself.
-
-### Why are credentials loaded via pydantic-settings?
-
-Credentials are loaded local-first from `gpu-skill-builder/.env` with a fallback to
-`C:/Users/keith/dev/.env`. This keeps the repo self-contained while preserving
-backward compatibility with existing shared env setups.
-
-### Why is the TTL programmatic and not delegated to the LLM?
-
-Because the LLM will forget. An LLM orchestrator that provisions a GPU instance and
-then enters a long conversation loop may never issue a destroy call. The TTL job is
-scheduled immediately on creation and fires on a wall-clock trigger regardless of what
-the calling agent does next. This is the primary defence against forgotten instances
-burning credits.
-
----
-
-## Operational guardrails
-
-These fire automatically — no configuration needed at call time:
-
-| Guardrail | Default | What it does |
+| Provider | Current code status | Notes |
 |---|---|---|
-| Cost cap | $5.00 per instance | Rejects provision if `hours × rate` exceeds limit |
-| Idempotency | — | Returns the existing instance if the same name is already active |
-| Concurrency cap | 2 instances | Rejects new provision if 2+ instances are already live |
-| Stuck watchdog | 15 min pending timeout | Destroys instances that never leave pending/initializing |
-| Startup reconciliation | 1h fallback TTL | Re-registers TTL jobs for live instances on process restart |
+| HuggingFace | Supported | Uses HF Inference Endpoints API v2. Monitoring probes use `HF_TOKEN`. Current profile-driven iteration is untested live. |
+| DigitalOcean | Supported | Creates droplets and deploys remote `vLLM` over SSH using resolved deployment profiles. Current profile-driven iteration is untested live. |
+| Modal | Supported | Deploys OpenAI-compatible `vLLM` apps and monitors readiness and staleness. Current profile-driven iteration is untested live. |
+| OpenRouter | Fallback only | OpenAI-compatible fallback lane when a GPU endpoint fails or later becomes unhealthy. Not part of the GPU fleet monitor. |
+| AMD / MI300X | Blocked | No active provider integration; current code returns a clear blocked message. |
 
-All defaults are in `config.py` and can be overridden via environment variables.
-
-The biggest risk when an LLM orchestrates this skill is **calling it in a loop** —
-each iteration provisions a new instance if the name changes. Always use a stable,
-predictable instance name. The idempotency guard returns the existing instance
-immediately on a name collision, making repeat calls safe.
-
----
-
-## Supported providers
-
-| Provider | Status | Notes |
-|---|---|---|
-| HuggingFace | Ready | Uses HF Inference Endpoints API v2. Endpoint is OpenAI-compatible. Requires payment method on account. |
-| DigitalOcean | Ready (secondary) | H200 GPU (`gpu-h200x1-141gb`) in `atl1` confirmed working. Deterministic vLLM model swap script: `launch-playbooks/digitalocean/swap-vllm-model.ps1`. |
-| Modal | Ready | Deploys an OpenAI-compatible vLLM app endpoint via `modal deploy`. |
-| OpenRouter | Fallback lane | OpenAI-compatible serverless fallback when GPU path fails or later becomes unhealthy. |
-| AMD / MI300X | Blocked | DO account has $200 AMD credits but AMD GPU entitlement not enabled on the backend. Needs DO support ticket. See `human-amd-credits-use.md`. |
-
----
-
-## File structure
-
-```
-gpu-skill-builder/
-├── .claude/skills/gpu-builder.md   ← Skill definition for LLM agent callers
-├── providers/
-│   ├── __init__.py                 ← PROVIDER_MAP registry
-│   ├── base.py                     ← Abstract GpuProvider interface
-│   ├── hf_provider.py              ← HuggingFace Inference Endpoints (v2 API)
-│   ├── do_provider.py              ← DigitalOcean droplets
-│   ├── modal_provider.py           ← Modal vLLM deployments
-│   └── openrouter_provider.py      ← OpenRouter fallback adapter
-├── config.py                       ← Settings via pydantic-settings (.env loader)
-├── models.py                       ← Pydantic models: request, result, instance
-├── catalog.py                      ← Static VRAM→model map (~20 curated models)
-├── skill.py                        ← run_skill(): agent mode + interactive mode
-├── scheduler.py                    ← TTL, uptime, watchdog, startup reconciliation
-├── main.py                         ← Test harness: provisions T4 + Gemma 2 2B
-├── requirements.txt
-├── agent-amd-credits-use.md        ← Agent-readable AMD/DO credit investigation
-├── human-amd-credits-use.md        ← Human-readable version of same
-├── create-h200-droplet.ps1         ← Manual H200 droplet creation script (DO)
-└── h200-ip.txt                     ← IP of a prior H200 probe droplet (stale, destroyed)
-```
-
----
+Other provider folders under `launch-playbooks/` are runbooks and research artifacts. They are not current `skill.py` provider integrations unless this README explicitly says so.
 
 ## Setup
 
@@ -196,158 +152,88 @@ gpu-skill-builder/
 pip install -r requirements.txt
 ```
 
-Required environment variables (in your `.env`):
+Create a local `.env` in the repo root with the provider credentials and monitor settings you actually use:
 
-```
-HF_TOKEN=hf_...                         # HuggingFace provider
-DIGITALOCEAN_ACCESS_TOKEN=dop_v1_...    # DigitalOcean provider
-MODAL_TOKEN_ID=ak-...                   # Modal token id
-MODAL_TOKEN_SECRET=as-...               # Modal token secret
-OPENROUTER_API_KEY=sk-or-...            # OpenRouter fallback provider
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL=qwen/qwen3.5-35b-a3b
-TELEGRAM_BOT_TOKEN=123456:ABC...        # Telegram alert bot token
-TELEGRAM_CHAT_ID=123456789              # Target user/group chat id
-GPU_MONITOR_ENABLED=false               # Set true on always-on monitor host
-GPU_MONITOR_INTERVAL_MINUTES=5          # Poll cadence across providers
-GPU_MONITOR_RUNTIME_ALERT_MINUTES=120   # Alert once when runtime crosses threshold
-GPU_MONITOR_AUTO_STOP_MINUTES=0         # 0 disables auto-stop; >0 enforces hard stop
-```
-
-The settings loader checks env sources in this order:
-1. Existing process environment variables
-2. `gpu-skill-builder/.env` (primary)
-3. `C:/Users/keith/dev/.env` (fallback)
-
-Do not use `OPENAI_API_KEY` for OpenRouter in this repo. Keep provider-scoped names
-(`OPENROUTER_API_KEY`, `MODAL_TOKEN_*`, etc.) to avoid key collisions across
-OpenAI-compatible services.
-
-### Local `.env` template for new users
-
-Create `gpu-skill-builder/.env` with blank placeholders:
-
-```
+```dotenv
 HF_TOKEN=
 DIGITALOCEAN_ACCESS_TOKEN=
 MODAL_TOKEN_ID=
 MODAL_TOKEN_SECRET=
 OPENROUTER_API_KEY=
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL=qwen/qwen3.5-35b-a3b
+OPENROUTER_MODEL=qwen/qwen3.6-plus
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 GPU_MONITOR_ENABLED=false
 GPU_MONITOR_INTERVAL_MINUTES=5
 GPU_MONITOR_RUNTIME_ALERT_MINUTES=120
 GPU_MONITOR_AUTO_STOP_MINUTES=0
+GPU_MONITOR_READINESS_POLL_SECONDS=30
+GPU_MONITOR_READINESS_TIMEOUT_MINUTES=20
+GPU_MONITOR_STALE_AFTER_MINUTES=10
+GPU_MONITOR_UNHEALTHY_AUTO_STOP_MINUTES=0
 ```
 
-### Always-on fleet monitor (EC2 relay)
+Settings precedence is:
 
-To run provider-wide GPU monitoring independent of your local machine:
+1. process environment
+2. repo-local `.env`
+3. `~/dev/.env`
+
+Use provider-scoped variable names in this repo. Do not overload `OPENAI_API_KEY` for OpenRouter.
+
+## Recommended Always-On Monitor
+
+For durable alerting, run the monitor on an always-on host:
 
 ```bash
 python gpu_monitor_daemon.py
 ```
 
-Behavior:
-- Polls Hugging Face, Modal, and DigitalOcean for active instances.
-- Sends Telegram notifications for new instances, status changes, failures, and disappearances.
-- Optional runtime threshold alert and optional hard auto-stop enforcement.
-- Persists monitor state in `.do_state.json` under `gpu_monitor`.
+This is the recommended way to avoid silent spend and stale endpoints during long sessions or after local agent processes exit.
 
-### Oracle host deployment helper
+Current monitor behavior:
 
-If you have an always-on Oracle Linux VM, use:
+- polls `huggingface`, `modal`, and `digitalocean`
+- stores state in `.do_state.json` under `gpu_monitor`
+- sends deterministic Telegram alerts
+- tracks first seen, first ready, last successful probe, current classification, and consecutive failures
+- supports runtime auto-stop and optional unhealthy/stale auto-stop
 
-```powershell
-.\scripts\monitor\bootstrap_oracle_monitor.ps1 -HostIp <PUBLIC_IP>
+## File Structure
+
+```text
+gpu-skill-builder/
+├── providers/                     # provider implementations used by run_skill()
+├── skill.py                       # main entrypoint
+├── profile_registry.py            # typed profile loading + runtime selection
+├── profiles/                      # canonical JSON model/deployment/harness profiles
+├── remote_vllm.py                 # remote vLLM deployment for raw GPU VMs
+├── monitor.py                     # fleet monitor + readiness/staleness tracking
+├── gpu_monitor_daemon.py          # always-on monitor process
+├── scheduler.py                   # TTL, uptime, watchdog, readiness-watch scheduling
+├── endpoint_probe.py              # shared readiness probe layer
+├── monitor_alerts.py              # deterministic Telegram event formatting/sending
+├── handoff.py                     # non-secret harness handoff manifest builder
+├── catalog.py                     # static VRAM -> model compatibility map
+├── docs/                          # research and planning material
+└── launch-playbooks/              # provider and harness runbooks
 ```
 
-Then on the VM:
+## Draft Planning Material
 
-```bash
-cp /opt/gpu-skill-builder/scripts/monitor/monitor_env.example /opt/gpu-skill-builder/.env
-# edit /opt/gpu-skill-builder/.env with Telegram + provider credentials
-sudo bash /opt/gpu-skill-builder/scripts/monitor/install_monitor_service.sh \
-  --repo-dir /opt/gpu-skill-builder \
-  --env-file /opt/gpu-skill-builder/.env
-```
+The following folders are intentionally **not** runtime truth today:
 
-Share this template with future users and have each user fill values locally.
+- [docs/research/production-grade-gpu-deployment](docs/research/production-grade-gpu-deployment)
+- [launch-playbooks/production-grade](launch-playbooks/production-grade)
 
----
+They are draft planning artifacts for later architecture changes.
 
-## Runtime continuity helper
+## Known Limitations
 
-For long sessions, call `ensure_active_endpoint(result)` before model usage. If the
-GPU endpoint has failed, expired, or become unhealthy, it returns a result that is
-automatically switched to OpenRouter with explicit fallback metadata.
-
-`GpuProvisionResult` includes:
-- `fallback_activated`
-- `fallback_provider`
-- `fallback_reason`
-- `primary_provider_error`
-
----
-
-## Hardware catalog (HuggingFace)
-
-| Slug | Display | VRAM | $/hr |
-|---|---|---|---|
-| `nvidia-t4-x1` | NVIDIA T4 | 16 GB | $0.60 |
-| `nvidia-a10g-x1` | NVIDIA A10G | 24 GB | $1.00 |
-| `nvidia-a10g-x4` | 4× A10G | 96 GB | $4.00 |
-| `nvidia-a100-x1` | NVIDIA A100 | 80 GB | $4.00 |
-| `nvidia-a100-x4` | 4× A100 | 320 GB | $16.00 |
-
----
-
-## Model catalog
-
-Models are matched to hardware by VRAM. Only models verified to fit are shown.
-
-| Tier | Hardware | Models |
-|---|---|---|
-| 16 GB | T4 | Llama 3.2 1B/3B Instruct, Gemma 2 2B Instruct, Phi-3 Mini 4K, Mistral 7B |
-| 24 GB | A10G | Llama 3.1 8B, Llama 3.2 11B Vision, Gemma 2 9B, Mistral 7B, Qwen 2.5 7B |
-| 80 GB | A100 | Llama 3.1/3.3 70B, Qwen 2.5 72B, Mixtral 8×7B, Gemma 2 27B |
-| 96 GB | 4× A10G | Llama 3.1 70B, Qwen 2.5 72B, Mixtral 8×7B, Gemma 2 27B |
-| 320 GB | 4× A100 | Llama 3.1 405B FP8, Llama 3.3 70B, Qwen 2.5 72B |
-
----
-
-## H200 Optimization Notes
-
-See [h200-Qwen3.6-35B-A3B-text-only-droplet-optimization.txt](h200-Qwen3.6-35B-A3B-text-only-droplet-optimization.txt).
-This includes advanced vLLM flags for ACP (Automatic Compression Pooling), KV cache management, and monitoring guidance.
-
-For deterministic model cutovers on an existing DO droplet, use:
-
-```powershell
-.\launch-playbooks\digitalocean\swap-vllm-model.ps1 -HostIp <DROPLET_IP> -ModelId google/gemma-4-31B-it
-```
-
-## Adding a provider
-
-1. Create `providers/<name>_provider.py` inheriting `GpuProvider` from `providers/base.py`
-2. Implement: `list_hardware`, `create_instance`, `get_instance`, `destroy_instance`, `list_instances`
-3. Add a hardware catalog (list of `HardwareTier` objects with VRAM and price)
-4. Register in `providers/__init__.py` `PROVIDER_MAP`
-5. Add models to `catalog.py` for any new VRAM tiers you introduce
-
-See `providers/hf_provider.py` as the reference implementation.
-
----
-
-## What is not done yet
-
-- **Post-provision health probe** — instance status shows `running` before the model finishes loading; no wait-for-ready loop exists yet
-- **Cross-session spend tracking** — cost cap is per-instance only; no cumulative budget guard across multiple instances
-- **AMD / MI300X provider** — blocked on DigitalOcean account GPU entitlement; passing `provider="amd"` returns a clear error message (see `human-amd-credits-use.md`)
-- **Multi-provider parallel availability check** — no fallback to a second GPU provider if the first has no capacity
-- **ThunderCompute / Vast.ai / NVIDIA providers** — accounts and credentials in place; Python provider classes not yet written
-- **Unit test coverage** — test suite exists (`tests/`) covering guardrails, model validation, state serialization, and config loading; provider integration tests require live API access and are not yet written
-
+- `run_skill()` success does not mean the endpoint is fully ready; use `ensure_active_endpoint()` before relying on the endpoint.
+- The current profile-driven runtime manifests and harness handoff flow are still untested against live provider and harness runs in this repo cycle.
+- Telegram monitoring requires both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
+- OpenRouter is a fallback lane, not part of the GPU fleet monitor.
+- AMD / MI300X is still blocked in current code.
+- Some provider and harness runbooks under `launch-playbooks/` and `cli-playbooks/` are historical validation notes rather than first-class runtime integrations.

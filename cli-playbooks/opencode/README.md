@@ -1,10 +1,11 @@
 # OpenCode CLI
 
-Last updated: 2026-04-17
+Last updated: 2026-04-22
 
 Current state:
 - OpenCode local harness flow has been exercised from this machine.
 - OpenCode server mode was used with provider wiring to GPU-backed endpoints.
+- This file is a dated harness runbook, not a repo-wide provider support matrix.
 
 Direct endpoint vs coding harness notes:
 - Direct GPU/model endpoint:
@@ -17,7 +18,7 @@ Direct endpoint vs coding harness notes:
 Provider-specific advice:
 - `modal`:
   - Works when endpoint is healthy.
-  - Verify `/health` and `/v1/models` before coding runs.
+  - Verify `/health`, `/v1/models`, and a smoke prompt before coding runs.
   - Known failure path in this repo: model boot/load failure (`gpt-oss-120b`) caused harness failures.
 - `nvidia`:
   - Works via OpenAI-compatible wiring in OpenCode.

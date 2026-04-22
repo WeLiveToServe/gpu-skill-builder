@@ -1,6 +1,6 @@
 # Hugging Face ZeroGPU
 
-Last updated: 2026-04-17
+Last updated: 2026-04-22
 
 Current state:
 - No ZeroGPU workflow is currently configured or validated from this repo.
@@ -14,3 +14,7 @@ Coding harness advice:
 - `qwen-code`: not yet validated against HF ZeroGPU.
 - `codex-open-source`: not yet validated against HF ZeroGPU.
 - `claude-open-source`: not yet validated against HF ZeroGPU.
+
+Important scope note:
+- this folder is a runbook placeholder only
+- ZeroGPU is not a current `skill.py` provider integration

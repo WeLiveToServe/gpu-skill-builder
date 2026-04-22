@@ -1,6 +1,6 @@
 # Hugging Face Spaces
 
-Last updated: 2026-04-17
+Last updated: 2026-04-22
 
 Current state:
 - No Hugging Face Spaces deployment is currently active from this repo.
@@ -14,3 +14,7 @@ Coding harness advice:
 - `qwen-code`: not yet validated against HF Spaces.
 - `codex-open-source`: not yet validated against HF Spaces.
 - `claude-open-source`: not yet validated against HF Spaces.
+
+Important scope note:
+- this folder is a runbook placeholder only
+- Spaces is not a current `skill.py` provider integration

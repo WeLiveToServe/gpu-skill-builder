@@ -1,12 +1,13 @@
 # Modal Launches
 
-Last updated: 2026-04-17
+Last updated: 2026-04-22
 
 Current state:
 - Modal connectivity and deployment flow are validated.
 - `openai/gpt-oss-120b` launch was attempted on H100 but failed to become healthy due to model load/OOM behavior.
 - `Qwen/Qwen3-8B` was successfully deployed and endpoint-tested on H100.
-- The last active Modal test instance was intentionally stopped (no active instance expected right now).
+- This README is a dated Modal runbook, not a statement that a given Modal app is live right now.
+- The current profile-driven harness/runtime iteration layered on top of this path is still untested live in this repo cycle.
 
 Direct endpoint vs coding harness notes:
 - Direct endpoint checks:
@@ -27,3 +28,6 @@ Coding harness advice:
 - `qwen-code`: not yet validated against Modal from this repo.
 - `codex-open-source`: not yet validated against Modal from this repo.
 - `claude-open-source`: not yet validated against Modal from this repo.
+
+Operational note:
+- repo-wide readiness, stale detection, and Telegram alerting now live in `monitor.py` and `gpu_monitor_daemon.py`

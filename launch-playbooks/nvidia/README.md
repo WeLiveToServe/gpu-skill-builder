@@ -1,6 +1,6 @@
 # NVIDIA Playbooks
 
-Last updated: 2026-04-17
+Last updated: 2026-04-22
 
 Current state:
 - NVIDIA hosted endpoint connectivity is validated using `https://integrate.api.nvidia.com/v1`.
@@ -16,6 +16,10 @@ Direct endpoint vs coding harness notes:
 - Coding harness path:
   - Not yet validated for NVIDIA in this repo cycle.
   - Expected behavior: once wired into provider config, harness should call the same endpoint and inherit the same model entitlement constraints.
+
+Important scope note:
+- these are runbooks and validation notes
+- NVIDIA is not a current `skill.py` provider integration
 
 Runbooks:
 - `NVIDIA_ENDPOINT_NEMOTRON_PLAYBOOK.md`: exact endpoint validation and Nemotron invocation procedure (PowerShell + Bash), including observed success/failure cases.

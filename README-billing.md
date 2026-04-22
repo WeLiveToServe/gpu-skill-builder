@@ -14,7 +14,7 @@ The script is intentionally DigitalOcean-specific right now and is meant to help
 - Store timestamped snapshots for diffing over time.
 - Detect whether billing/credit-related state changed since the previous run.
 
-This gives us a practical baseline for tracking AMD/GPU-related spend and credit behavior while we iterate on the GPU skill builder.
+This gives the repo a practical baseline for tracking DigitalOcean spend and credit behavior from local scripts.
 
 ## Usage
 
@@ -51,14 +51,8 @@ in the output directory.
 
 `digitalocean_billing_state.json` contains a stable hash of key billing fields so we can quickly detect changes between runs.
 
-## Future objective (multi-provider GPU billing skill)
+## Current scope
 
-This is the first building block for a broader GPU billing skill that works across providers (for example DigitalOcean, Modal, Lambda, RunPod, etc.).
+This README is about the current DigitalOcean billing query helper only.
 
-Planned direction:
-
-- Define a provider-agnostic schema for: balance, credits, expirations, and usage windows.
-- Add one provider adapter script/module at a time under `billing-query-providers/`.
-- Normalize outputs into a shared format that upstream agents/tools can consume.
-- Add scheduled polling + alerting when credits near expiration or usage spikes.
-- Integrate the normalized billing layer into the GPU skill so any agent can query spend/credits consistently.
+Multi-provider billing normalization is **not** implemented as part of the main skill runtime today.
