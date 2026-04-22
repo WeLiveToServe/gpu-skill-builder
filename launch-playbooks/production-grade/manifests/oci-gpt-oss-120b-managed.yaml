@@ -1,0 +1,22 @@
+apiVersion: gpu-skill-builder/v1alpha1
+kind: ManagedEndpointProfile
+metadata:
+  name: oci-gpt-oss-120b-managed
+  status: draft
+  classification: recommended
+spec:
+  provider: oracle
+  service: oci-generative-ai
+  model_id: openai/gpt-oss-120b
+  profile: managed-conservative
+  runtime:
+    kind: managed
+    context_target: 131072
+    control_plane_required: true
+  health:
+    require_models_endpoint: true
+    smoke_prompt: Reply with OK
+    long_context_probe_tokens: 32768
+  notes:
+    - Use Oracle as the managed path for tomorrow deployment when available.
+    - Keep app-side request ceilings explicit instead of relying on model maximums.

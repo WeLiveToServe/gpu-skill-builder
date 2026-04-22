@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-04-22",
+  "scope": {
+    "goal": "Conservative 128k skills-heavy deployment planning",
+    "default_runtime": "vllm",
+    "managed_runtime_markers": [
+      "oci-generative-ai",
+      "nvidia-managed"
+    ]
+  },
+  "shared_defaults": {
+    "max_model_len": 131072,
+    "kv_cache_dtype": "auto",
+    "enable_chunked_prefill": true,
+    "health_gates": [
+      "/health",
+      "/v1/models",
+      "smoke_prompt",
+      "32k_prefill_test",
+      "128k_profile_test"
+    ]
+  },
+  "profiles": {
+    "interactive-stable": {
+      "purpose": "Sticky multi-turn agent sessions",
+      "max_num_seqs_h200x1": 4,
+      "max_num_seqs_h200x8": 4,
+      "max_num_batched_tokens": 16384,
+      "enable_prefix_caching": true
+    },
+    "medium-stable": {
+      "purpose": "Mixed traffic with some parallelism",
+      "max_num_seqs_h200x8": 6,
+      "max_num_batched_tokens": 24576,
+      "enable_prefix_caching": false
+    },
+    "harness-eval": {
+      "purpose": "Deterministic benchmark and regression runs",
+      "max_num_seqs_h200x1": 2,
+      "max_num_seqs_h200x8": 1,
+      "max_num_batched_tokens": 8192,
+      "enable_prefix_caching": false
+    }
+  },
+  "models": [
+    {
+      "id": "gpt-oss-120b",
+      "requested_family": "openai/gpt-oss-120b",
+      "resolved_target": "openai/gpt-oss-120b",
+      "recommended_runtime": "vllm",
+      "self_host_realistic_tomorrow": true,
+      "minimum_boot": {
+        "provider": "digitalocean",
+        "hardware_slug": "gpu-h100x1-80gb",
+        "gpu_count": 1,
+        "classification": "testing_only"
+      },
+      "production_safe": {
+        "provider": "digitalocean",
+        "hardware_slug": "gpu-h200x1-141gb",
+        "gpu_count": 1,
+        "classification": "recommended",
+        "profile": "interactive-stable",
+        "manifest": "launch-playbooks/production-grade/manifests/do-gpt-oss-120b-h200x1.yaml"
+      },
+      "oracle_managed": {
+        "provider": "oracle",
+        "runtime": "oci-generative-ai",
+        "classification": "recommended",
+        "manifest": "launch-playbooks/production-grade/manifests/oci-gpt-oss-120b-managed.yaml"
+      },
+      "nvidia_managed": {
+        "provider": "nvidia-managed",
+        "classification": "testing_only"
+      },
+      "fallback_order": [
+        "lower_max_num_seqs",
+        "lower_max_num_batched_tokens",
+        "disable_prefix_caching",
+        "reduce_application_output_ceiling"
+      ]
+    },
+    {
+      "id": "qwen3-coder-480b",
+      "requested_family": "Qwen3-Coder-480B",
+      "resolved_target": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+      "recommended_runtime": "vllm",
+      "self_host_realistic_tomorrow": true,
+      "minimum_boot": {
+        "provider": "oracle",
+        "hardware_slug": "BM.GPU.H100.8",
+        "gpu_count": 8,
+        "classification": "testing_only"
+      },
+      "production_safe": {
+        "provider": "digitalocean",
+        "hardware_slug": "gpu-h200x8-1128gb",
+        "gpu_count": 8,
+        "classification": "recommended",
+        "profile": "interactive-stable",
+        "manifest": "launch-playbooks/production-grade/manifests/do-qwen3-coder-480b-h200x8.yaml"
+      },
+      "oracle_self_host": {
+        "provider": "oracle",
+        "hardware_slug": "BM.GPU.H200.8",
+        "gpu_count": 8,
+        "classification": "recommended_if_quota_exists",
+        "profile": "interactive-stable",
+        "manifest": "launch-playbooks/production-grade/manifests/oci-qwen3-coder-480b-h200x8.yaml"
+      },
+      "nvidia_managed": {
+        "provider": "nvidia-managed",
+        "classification": "testing_only"
+      },
+      "fallback_order": [
+        "lower_max_num_seqs",
+        "disable_prefix_caching",
+        "lower_max_num_batched_tokens",
+        "keep_tp_fixed_and_avoid_topology_churn"
+      ]
+    },
+    {
+      "id": "deepseek-v3.1",
+      "requested_family": "DeepSeek-v3.2",
+      "resolved_target": "deepseek-ai/DeepSeek-V3.1",
+      "recommended_runtime": "vllm",
+      "alternate_runtime": "sglang",
+      "self_host_realistic_tomorrow": true,
+      "minimum_boot": {
+        "provider": "digitalocean",
+        "hardware_slug": "gpu-h200x8-1128gb",
+        "gpu_count": 8,
+        "classification": "possible_but_risky"
+      },
+      "production_safe": {
+        "provider": "digitalocean",
+        "hardware_slug": "gpu-h200x8-1128gb",
+        "gpu_count": 8,
+        "classification": "recommended",
+        "profile": "interactive-stable",
+        "manifest": "launch-playbooks/production-grade/manifests/do-deepseek-v3.1-h200x8.yaml"
+      },
+      "oracle_self_host": {
+        "provider": "oracle",
+        "hardware_slug": "BM.GPU.H200.8",
+        "gpu_count": 8,
+        "classification": "recommended_if_quota_exists",
+        "profile": "interactive-stable",
+        "manifest": "launch-playbooks/production-grade/manifests/oci-deepseek-v3.1-h200x8.yaml"
+      },
+      "nvidia_managed": {
+        "provider": "nvidia-managed",
+        "classification": "testing_only"
+      },
+      "fallback_order": [
+        "lower_max_num_seqs",
+        "lower_max_num_batched_tokens",
+        "keep_expert_parallel_enabled",
+        "prototype_sglang_before_adding_more_vllm_complexity"
+      ]
+    },
+    {
+      "id": "kimi-k2",
+      "requested_family": "Kimi 2.6",
+      "resolved_target": "moonshotai/Kimi-K2-Instruct-0905",
+      "recommended_runtime": "managed_api_first",
+      "alternate_runtime": "sglang",
+      "self_host_realistic_tomorrow": false,
+      "minimum_boot": {
+        "provider": "oracle",
+        "hardware_slug": "2x BM.GPU.H200.8",
+        "gpu_count": 16,
+        "classification": "possible_but_risky"
+      },
+      "production_safe": {
+        "provider": "managed-api",
+        "classification": "recommended"
+      },
+      "oracle_rd_prototype": {
+        "provider": "oracle",
+        "hardware_slug": "2x BM.GPU.H200.8",
+        "gpu_count": 16,
+        "classification": "possible_but_risky",
+        "profile": "rd-only",
+        "manifest": "launch-playbooks/production-grade/manifests/oci-kimi-k2-rd-only.yaml"
+      },
+      "digitalocean": {
+        "provider": "digitalocean",
+        "classification": "do_not_attempt"
+      },
+      "nvidia_managed": {
+        "provider": "nvidia-managed",
+        "classification": "testing_only"
+      },
+      "fallback_order": [
+        "stay_on_managed_api",
+        "treat_self_host_as_r_and_d",
+        "validate_cluster_restart_behavior",
+        "do_not_route_production_traffic_until_repeated_128k_passes"
+      ]
+    },
+    {
+      "id": "minimax-m2.7",
+      "requested_family": "MiniMax 2.7",
+      "resolved_target": "MiniMaxAI/MiniMax-M2.7",
+      "recommended_runtime": "vllm",
+      "alternate_runtime": "sglang",
+      "self_host_realistic_tomorrow": true,
+      "minimum_boot": {
+        "provider": "oracle",
+        "hardware_slug": "BM.GPU.H100.8",
+        "gpu_count": 8,
+        "classification": "testing_only"
+      },
+      "production_safe": {
+        "provider": "digitalocean",
+        "hardware_slug": "gpu-h200x8-1128gb",
+        "gpu_count": 8,
+        "classification": "recommended",
+        "profile": "interactive-stable",
+        "manifest": "launch-playbooks/production-grade/manifests/do-minimax-m2.7-h200x8.yaml"
+      },
+      "oracle_self_host": {
+        "provider": "oracle",
+        "hardware_slug": "BM.GPU.H200.8",
+        "gpu_count": 8,
+        "classification": "recommended_if_quota_exists",
+        "profile": "interactive-stable",
+        "manifest": "launch-playbooks/production-grade/manifests/oci-minimax-m2.7-h200x8.yaml"
+      },
+      "nvidia_managed": {
+        "provider": "nvidia-managed",
+        "classification": "testing_only"
+      },
+      "fallback_order": [
+        "lower_max_num_seqs",
+        "lower_max_num_batched_tokens",
+        "keep_single_replica",
+        "return_to_harness_eval_profile_before_re-expanding_concurrency"
+      ]
+    }
+  ]
+}

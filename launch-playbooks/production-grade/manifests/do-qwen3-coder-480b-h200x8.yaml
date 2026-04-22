@@ -1,0 +1,40 @@
+apiVersion: gpu-skill-builder/v1alpha1
+kind: VllmDeploymentProfile
+metadata:
+  name: do-qwen3-coder-480b-h200x8
+  status: draft
+  classification: recommended
+spec:
+  provider: digitalocean
+  hardware_slug: gpu-h200x8-1128gb
+  gpu_count: 8
+  model_id: Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8
+  served_model_name: qwen3-coder-480b-a35b-instruct
+  profile: interactive-stable
+  runtime:
+    kind: vllm
+    max_model_len: 131072
+    gpu_memory_utilization: 0.76
+    tensor_parallel_size: 8
+    pipeline_parallel_size: 1
+    kv_cache_dtype: auto
+    enable_expert_parallel: true
+    enable_eplb: true
+    enable_chunked_prefill: true
+    enable_prefix_caching: true
+    max_num_seqs: 4
+    max_num_batched_tokens: 16384
+    max_parallel_loading_workers: 2
+  health:
+    require_health_endpoint: true
+    require_models_endpoint: true
+    smoke_prompt: Reply with OK
+    long_context_probe_tokens: 32768
+  fallback_order:
+    - lower max_num_seqs to 2
+    - disable prefix caching
+    - lower max_num_batched_tokens to 12288
+    - keep tensor_parallel_size fixed at 8
+  systemd:
+    service_template: ../systemd/vllm-model.service.template
+    env_template: ../env/vllm-model.env.example

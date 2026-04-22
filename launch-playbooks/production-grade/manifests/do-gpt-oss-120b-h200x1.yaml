@@ -1,0 +1,37 @@
+apiVersion: gpu-skill-builder/v1alpha1
+kind: VllmDeploymentProfile
+metadata:
+  name: do-gpt-oss-120b-h200x1
+  status: draft
+  classification: recommended
+spec:
+  provider: digitalocean
+  hardware_slug: gpu-h200x1-141gb
+  gpu_count: 1
+  model_id: openai/gpt-oss-120b
+  served_model_name: gpt-oss-120b
+  profile: interactive-stable
+  runtime:
+    kind: vllm
+    max_model_len: 131072
+    gpu_memory_utilization: 0.80
+    tensor_parallel_size: 1
+    pipeline_parallel_size: 1
+    kv_cache_dtype: auto
+    enable_chunked_prefill: true
+    enable_prefix_caching: true
+    max_num_seqs: 4
+    max_num_batched_tokens: 16384
+  health:
+    require_health_endpoint: true
+    require_models_endpoint: true
+    smoke_prompt: Reply with OK
+    long_context_probe_tokens: 32768
+  fallback_order:
+    - lower max_num_seqs to 2
+    - lower max_num_batched_tokens to 8192
+    - disable prefix caching
+    - reduce application output ceiling
+  systemd:
+    service_template: ../systemd/vllm-model.service.template
+    env_template: ../env/vllm-model.env.example

@@ -1,0 +1,27 @@
+apiVersion: gpu-skill-builder/v1alpha1
+kind: ResearchPrototypeProfile
+metadata:
+  name: oci-kimi-k2-rd-only
+  status: draft
+  classification: possible_but_risky
+spec:
+  provider: oracle
+  hardware_slug: 2x BM.GPU.H200.8
+  gpu_count: 16
+  model_id: moonshotai/Kimi-K2-Instruct-0905
+  profile: rd-only
+  runtime:
+    preferred_kind: sglang
+    alternate_kind: vllm
+    context_target: 131072
+  restrictions:
+    - not production safe
+    - do not route user traffic until repeated 128k passes succeed
+    - cluster restart and recovery behavior must be proven first
+  health:
+    require_models_endpoint: true
+    smoke_prompt: Reply with OK
+    long_context_probe_tokens: 32768
+  notes:
+    - Managed API remains the recommended path.
+    - This file exists only so future R and D work does not start from a blank page.

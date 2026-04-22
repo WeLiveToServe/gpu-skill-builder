@@ -1,0 +1,37 @@
+apiVersion: gpu-skill-builder/v1alpha1
+kind: VllmDeploymentProfile
+metadata:
+  name: oci-deepseek-v3.1-h200x8
+  status: draft
+  classification: recommended_if_quota_exists
+spec:
+  provider: oracle
+  hardware_slug: BM.GPU.H200.8
+  gpu_count: 8
+  model_id: deepseek-ai/DeepSeek-V3.1
+  served_model_name: deepseek-v3.1
+  profile: interactive-stable
+  runtime:
+    kind: vllm
+    max_model_len: 131072
+    gpu_memory_utilization: 0.74
+    tensor_parallel_size: 8
+    pipeline_parallel_size: 1
+    kv_cache_dtype: auto
+    enable_expert_parallel: true
+    enable_eplb: true
+    enable_chunked_prefill: true
+    enable_prefix_caching: false
+    max_num_seqs: 4
+    max_num_batched_tokens: 16384
+    max_parallel_loading_workers: 2
+  health:
+    require_health_endpoint: true
+    require_models_endpoint: true
+    smoke_prompt: Reply with OK
+    long_context_probe_tokens: 32768
+  notes:
+    - If instability remains after profile fallback, test SGLang before increasing vLLM complexity.
+  systemd:
+    service_template: ../systemd/vllm-model.service.template
+    env_template: ../env/vllm-model.env.example
