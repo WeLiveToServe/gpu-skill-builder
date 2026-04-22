@@ -35,13 +35,19 @@ async def main() -> None:
         interval_minutes=settings.monitor_interval_minutes,
         runtime_alert_minutes=settings.monitor_runtime_alert_minutes,
         auto_stop_minutes=settings.monitor_auto_stop_minutes,
+        readiness_timeout_minutes=settings.monitor_readiness_timeout_minutes,
+        stale_after_minutes=settings.monitor_stale_after_minutes,
+        unhealthy_auto_stop_minutes=settings.monitor_unhealthy_auto_stop_minutes,
     )
 
     logger.info(
-        "Monitor daemon running: interval=%dmin runtime_alert=%dmin auto_stop=%dmin",
+        "Monitor daemon running: interval=%dmin runtime_alert=%dmin auto_stop=%dmin readiness_timeout=%dmin stale_after=%dmin unhealthy_auto_stop=%dmin",
         settings.monitor_interval_minutes,
         settings.monitor_runtime_alert_minutes,
         settings.monitor_auto_stop_minutes,
+        settings.monitor_readiness_timeout_minutes,
+        settings.monitor_stale_after_minutes,
+        settings.monitor_unhealthy_auto_stop_minutes,
     )
     await asyncio.Event().wait()
 

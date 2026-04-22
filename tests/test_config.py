@@ -64,6 +64,10 @@ class TestSettings:
         assert s.max_spend_per_instance_usd == 5.0
         assert s.stuck_pending_minutes == 15
         assert s.watchdog_check_interval_minutes == 5
+        assert s.monitor_readiness_poll_seconds == 30
+        assert s.monitor_readiness_timeout_minutes == 20
+        assert s.monitor_stale_after_minutes == 10
+        assert s.monitor_unhealthy_auto_stop_minutes == 0
 
     def test_env_var_overrides_default(self, monkeypatch):
         monkeypatch.setenv("HF_TOKEN", "hf_testtoken")

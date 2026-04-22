@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     monitor_interval_minutes: int = Field(default=5, alias="GPU_MONITOR_INTERVAL_MINUTES")
     monitor_runtime_alert_minutes: int = Field(default=120, alias="GPU_MONITOR_RUNTIME_ALERT_MINUTES")
     monitor_auto_stop_minutes: int = Field(default=0, alias="GPU_MONITOR_AUTO_STOP_MINUTES")
+    monitor_readiness_poll_seconds: int = Field(default=30, alias="GPU_MONITOR_READINESS_POLL_SECONDS")
+    monitor_readiness_timeout_minutes: int = Field(default=20, alias="GPU_MONITOR_READINESS_TIMEOUT_MINUTES")
+    monitor_stale_after_minutes: int = Field(default=10, alias="GPU_MONITOR_STALE_AFTER_MINUTES")
+    monitor_unhealthy_auto_stop_minutes: int = Field(default=0, alias="GPU_MONITOR_UNHEALTHY_AUTO_STOP_MINUTES")
 
     model_config = SettingsConfigDict(
         extra="ignore",

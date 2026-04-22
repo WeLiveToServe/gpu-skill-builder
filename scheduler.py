@@ -20,7 +20,7 @@ from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from models import InstanceInfo, Provider
-from monitor import run_monitor_once
+from monitor import monitor_instance_once, run_monitor_once
 
 logger = logging.getLogger(__name__)
 _scheduler = AsyncIOScheduler()
@@ -126,6 +126,9 @@ def schedule_fleet_monitoring(
     interval_minutes: int,
     runtime_alert_minutes: int,
     auto_stop_minutes: int,
+    readiness_timeout_minutes: int,
+    stale_after_minutes: int,
+    unhealthy_auto_stop_minutes: int,
 ) -> None:
     """
     Register periodic cross-provider fleet monitoring with Telegram alerts.
@@ -141,12 +144,58 @@ def schedule_fleet_monitoring(
         kwargs={
             "runtime_alert_minutes": runtime_alert_minutes,
             "auto_stop_minutes": auto_stop_minutes,
+            "readiness_timeout_minutes": readiness_timeout_minutes,
+            "stale_after_minutes": stale_after_minutes,
+            "unhealthy_auto_stop_minutes": unhealthy_auto_stop_minutes,
         },
         id=job_id,
     )
     logger.info(
         "[Scheduler] Fleet monitor active (interval=%dmin runtime_alert=%dmin auto_stop=%dmin)",
         interval_minutes, runtime_alert_minutes, auto_stop_minutes,
+    )
+
+
+def cancel_readiness_watch(provider_key: Provider, instance_id: str) -> None:
+    job = _scheduler.get_job(f"readiness_{provider_key.value}_{instance_id}")
+    if job:
+        job.remove()
+        logger.info("[Scheduler] Cancelled readiness watch for %s/%s", provider_key.value, instance_id)
+
+
+def schedule_readiness_watch(
+    instance: InstanceInfo,
+    *,
+    poll_seconds: int,
+    runtime_alert_minutes: int,
+    auto_stop_minutes: int,
+    readiness_timeout_minutes: int,
+    stale_after_minutes: int,
+    unhealthy_auto_stop_minutes: int,
+) -> None:
+    _ensure_started()
+    job_id = f"readiness_{instance.provider.value}_{instance.id}"
+    if _scheduler.get_job(job_id):
+        return
+    _scheduler.add_job(
+        monitor_instance_once,
+        trigger=IntervalTrigger(seconds=poll_seconds),
+        kwargs={
+            "provider": instance.provider,
+            "instance_id": instance.id,
+            "runtime_alert_minutes": runtime_alert_minutes,
+            "auto_stop_minutes": auto_stop_minutes,
+            "readiness_timeout_minutes": readiness_timeout_minutes,
+            "stale_after_minutes": stale_after_minutes,
+            "unhealthy_auto_stop_minutes": unhealthy_auto_stop_minutes,
+        },
+        id=job_id,
+    )
+    logger.info(
+        "[Scheduler] Readiness watch active for %s/%s every %ds",
+        instance.provider.value,
+        instance.id,
+        poll_seconds,
     )
 
 
