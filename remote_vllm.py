@@ -18,7 +18,7 @@ import shlex
 from pathlib import Path
 
 from models import Provider
-from profile_registry import DeploymentProfile, ModelProfile
+from profile_registry import DeploymentProfile, DeploymentRuntimeProfile, ModelProfile
 
 logger = logging.getLogger(__name__)
 
@@ -146,38 +146,50 @@ def _quote_args(args: list[str]) -> str:
     return " ".join(shlex.quote(arg) for arg in args)
 
 
-def render_vllm_command_args(
+def render_vllm_runtime_args(
     *,
-    model_profile: ModelProfile,
-    deployment_profile: DeploymentProfile,
+    model_id: str,
+    served_model_name: str,
+    port: int | str,
+    runtime: DeploymentRuntimeProfile,
+    api_key: str | None = None,
+    download_dir: str | None = None,
 ) -> list[str]:
-    runtime = deployment_profile.runtime
-    served_model_name = deployment_profile.served_model_name or model_profile.provider_model_id
     args = [
-        "/usr/local/bin/vllm",
-        "serve",
-        model_profile.provider_model_id,
+        model_id,
         "--host",
         "0.0.0.0",
         "--port",
-        str(runtime.port),
-        "--served-model-name",
-        served_model_name,
-        "--generation-config",
-        "vllm",
-        "--max-model-len",
-        str(runtime.max_model_len),
-        "--gpu-memory-utilization",
-        f"{runtime.gpu_memory_utilization:.2f}",
-        "--tensor-parallel-size",
-        str(runtime.tensor_parallel_size),
-        "--pipeline-parallel-size",
-        str(runtime.pipeline_parallel_size),
-        "--max-num-seqs",
-        str(runtime.max_num_seqs),
-        "--max-num-batched-tokens",
-        str(runtime.max_num_batched_tokens),
+        str(port),
     ]
+    if api_key is not None:
+        args.extend(["--api-key", api_key])
+    args.extend(
+        [
+            "--served-model-name",
+            served_model_name,
+        ]
+    )
+    if download_dir is not None:
+        args.extend(["--download-dir", download_dir])
+    args.extend(
+        [
+            "--generation-config",
+            "vllm",
+            "--max-model-len",
+            str(runtime.max_model_len),
+            "--gpu-memory-utilization",
+            f"{runtime.gpu_memory_utilization:.2f}",
+            "--tensor-parallel-size",
+            str(runtime.tensor_parallel_size),
+            "--pipeline-parallel-size",
+            str(runtime.pipeline_parallel_size),
+            "--max-num-seqs",
+            str(runtime.max_num_seqs),
+            "--max-num-batched-tokens",
+            str(runtime.max_num_batched_tokens),
+        ]
+    )
     if runtime.kv_cache_dtype:
         args.extend(["--kv-cache-dtype", runtime.kv_cache_dtype])
     if runtime.expert_parallel:
@@ -190,6 +202,25 @@ def render_vllm_command_args(
         args.append("--enable-chunked-prefill")
     args.extend(runtime.extra_args)
     return args
+
+
+def render_vllm_command_args(
+    *,
+    model_profile: ModelProfile,
+    deployment_profile: DeploymentProfile,
+) -> list[str]:
+    runtime = deployment_profile.runtime
+    served_model_name = deployment_profile.served_model_name or model_profile.provider_model_id
+    return [
+        "/usr/local/bin/vllm",
+        "serve",
+        *render_vllm_runtime_args(
+            model_id=model_profile.provider_model_id,
+            served_model_name=served_model_name,
+            port=runtime.port,
+            runtime=runtime,
+        ),
+    ]
 
 
 def render_vllm_service_unit(

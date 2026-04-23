@@ -34,6 +34,11 @@ def _default_alias_for_model(model_repo_id: str) -> str:
     return _slugify(model_repo_id.split("/")[-1])
 
 
+def _deployment_variant_penalty(profile_id: str) -> int:
+    lowered = profile_id.lower()
+    return 1 if any(token in lowered for token in ("harness-eval", "benchmark", "smoke")) else 0
+
+
 def _infer_gpu_count(hardware_slug: str) -> int:
     match = re.search(r"x(\d+)(?:-|$)", hardware_slug.lower())
     if match:
@@ -217,6 +222,7 @@ class ProfileRegistry(BaseModel):
             (provider, "*", ""),
         ]
         for candidate_provider, candidate_hardware, candidate_model_id in candidates:
+            matches: list[DeploymentProfile] = []
             for profile in self.deployment_profiles.values():
                 if profile.provider != candidate_provider:
                     continue
@@ -224,7 +230,12 @@ class ProfileRegistry(BaseModel):
                     continue
                 if profile.model_profile_id != candidate_model_id:
                     continue
-                return profile
+                matches.append(profile)
+            if matches:
+                return sorted(
+                    matches,
+                    key=lambda profile: (_deployment_variant_penalty(profile.id), len(profile.id), profile.id),
+                )[0]
         return None
 
     def harness_profile_for(self, harness_profile_id: str) -> HarnessProfile:

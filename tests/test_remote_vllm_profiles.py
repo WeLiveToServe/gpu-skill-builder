@@ -32,3 +32,16 @@ def test_multi_gpu_moe_profile_renders_parallel_and_expert_flags():
     assert "--enable-eplb" in args
     assert "--enable-prefix-caching" not in args
     assert "--enable-chunked-prefill" in args
+
+
+def test_harness_eval_profile_disables_prefix_caching_and_lowers_concurrency():
+    registry = load_profile_registry()
+    model = registry.model_profiles["openai-gpt-oss-120b"]
+    deployment = registry.deployment_profiles["digitalocean-gpt-oss-120b-h200x1-harness-eval"]
+
+    args = render_vllm_command_args(model_profile=model, deployment_profile=deployment)
+
+    assert args[args.index("--max-num-seqs") + 1] == "2"
+    assert args[args.index("--max-num-batched-tokens") + 1] == "8192"
+    assert "--enable-prefix-caching" not in args
+    assert "--enable-chunked-prefill" in args
