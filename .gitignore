@@ -29,7 +29,13 @@ Thumbs.db
 .bench/benchmark-results/
 .bench/__pycache__/
 .bench/scratch/
+.bench/logs/
+.bench/matrix-runs/
+.bench/tool_probe/
+.bench/tool_probe_localgpu/
 .bench/claude-debug.log
+.bench/*.log
+.bench/*.err.log
 .bench/suite_runs_*.json
 
 # Local runtime state / generated artifacts

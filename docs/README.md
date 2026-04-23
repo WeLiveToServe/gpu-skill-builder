@@ -7,7 +7,7 @@ Important current rule:
 - the material here is useful for later design and implementation work
 - it is **not** the runtime source of truth for the current codebase
 - the root [README](../README.md) plus committed JSON manifests under `../profiles/` are the runtime source of truth
-- the current profile-driven runtime iteration is still untested on live providers and harness runs
+- the current DigitalOcean H200 benchmark matrix orchestration is implemented but still untested end-to-end on a live full matrix run
 
 ## Research Packages
 
@@ -57,4 +57,6 @@ Runtime note:
 
 - the repo now carries profile-driven runtime manifests in `profiles/`
 - those manifests are canonical runtime config, not this docs tree
-- the current live-validation state for that new profile layer is still untested
+- the benchmark-specific `harness-eval` behavior lives in a committed profile manifest, not in the research docs
+- benchmark harness execution docs live in [`.bench/BENCHMARKS.md`](../.bench/BENCHMARKS.md)
+- the current live-validation state for the H200 benchmark matrix is still untested beyond automated tests and local dry-run checks

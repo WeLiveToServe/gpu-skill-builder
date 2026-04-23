@@ -49,6 +49,11 @@ export BENCH_GOOSE_MODEL=<model-id>   # same model ID as other runners
 Codex compatibility note:
 - `run_codex()` already applies OpenRouter-safe `--disable` flags (`apps`, `plugins`, `personality`, `multi_agent`, `skill_mcp_dependency_install`, `tool_suggest`, `workspace_dependencies`) by default.
 
+Local GPU benchmark note:
+- A new DigitalOcean H200 matrix orchestrator lives at `.bench/run_do_h200_extreme100_matrix.py`.
+- It temporarily relaunches the current droplet in clean `gpt-oss-120b` benchmark mode, opens a local tunnel, runs `codex -> claude -> qwen -> opencode`, and restores the original interactive service by default.
+- This orchestration path is implemented but still untested end-to-end until we run the real remote job.
+
 **Goose binary:** Install from the goose repo before using the goose harness:
 ```powershell
 # In C:/Users/keith/dev/goose/
@@ -70,6 +75,19 @@ python run_named_suite.py --harness codex --suites medium60,hard80,hard90 \
   --ledger suite_runs_codex_latest.json
 ```
 
+**Run a subset with explicit artifact labeling:**
+```bash
+python run_named_suite.py --harness codex --suites extreme100 \
+  --task-ids x100_01_max_flow_dinic,x100_02_min_cost_max_flow \
+  --run-label smoke10 \
+  --ledger suite_runs_codex_smoke10.json
+```
+
+**Run the DO H200 local-GPU matrix:**
+```bash
+python run_do_h200_extreme100_matrix.py
+```
+
 **Full matrix (all agents × all suites)** — run once per harness:
 ```bash
 for h in claude codex opencode qwen goose; do
@@ -80,7 +98,7 @@ done
 
 ## Artifacts
 
-Results land in `benchmark-results/run-<timestamp>-<harness>-<suite>/`:
+Results land in `benchmark-results/run-<timestamp>-<harness>-<model>-<suite-or-label>/`:
 
 ```
 run-<ts>-claude-gemma4-hard90/

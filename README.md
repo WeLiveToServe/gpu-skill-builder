@@ -13,12 +13,14 @@ Works standalone as an interactive CLI or as a Python library called by another 
 
 - Supported runtime providers in code: `huggingface`, `digitalocean`, `modal`, and `openrouter` as a fallback lane.
 - Profile-driven runtime selection is now implemented through committed JSON manifests under `profiles/`, with typed resolution for model, deployment, and harness contracts.
+- A separate DigitalOcean H200 `gpt-oss-120b` harness-eval profile is available for clean benchmark runs with prefix caching disabled and conservative 128k settings.
 - `run_skill()` is a fast-create path. It returns after infrastructure creation and provider handoff; it does **not** promise the endpoint is fully ready for traffic.
 - `ensure_active_endpoint(result)` is the strict pre-use guard. It probes `/health`, `/v1/models`, and a fixed smoke prompt before trusting the endpoint.
 - `gpu-skill-builder` now emits a non-secret harness handoff manifest in results so sibling harness repos can keep `.env` files local while consuming resolved endpoint metadata.
 - Optional always-on monitoring is implemented with deterministic Telegram alerts, readiness watches, stale-endpoint detection, and configurable auto-stop guardrails.
+- Benchmark harness work under `.bench/` now supports subset runs, explicit run labels, local-GPU process-scoped endpoint overrides, and a DigitalOcean H200 `extreme100` matrix orchestrator.
 - The research package under [docs/research/production-grade-gpu-deployment](docs/research/production-grade-gpu-deployment) is **draft planning material** and is not the runtime source of truth today.
-- Current validation status: the profile-driven runtime and harness-handoff iteration is **untested on live providers and harness runs** in this repo cycle. The automated test suite is green, but treat the current manifests and renderers as unvalidated until we run live checks.
+- Current validation status: automated tests are green. The DigitalOcean H200 benchmark orchestrator has only been dry-run locally and is **untested end-to-end** against the live H200 matrix until we intentionally launch it.
 
 ## What It Does
 
@@ -45,8 +47,31 @@ Runtime configuration is now split into committed JSON profile families under `p
 Current runtime truth:
 
 - `profiles/` is the canonical runtime contract source for profile-driven launches.
+- benchmark-specific runtime behavior must be represented by explicit committed profiles, not by silently mutating the default interactive profile.
 - the research docs remain draft guidance and do not generate runtime config.
 - harness `.env` files stay local to each repo; this repo only emits non-secret handoff data.
+
+## Benchmarks
+
+Benchmark code lives under `.bench/`. The current benchmark path has two supported modes:
+
+- OpenRouter/default mode, driven by normal OpenRouter environment configuration.
+- Local-GPU mode, driven by process-scoped `HARNESS_OPENROUTER_BASE_URL`, `HARNESS_OPENROUTER_MODEL`, and `HARNESS_OPENROUTER_API_KEY` overrides.
+
+The DigitalOcean H200 matrix runner:
+
+```bash
+cd .bench
+python run_do_h200_extreme100_matrix.py
+```
+
+It backs up the current remote `vllm.service` and env file, relaunches `gpt-oss-120b` in benchmark-safe `harness-eval` mode, opens a local tunnel, runs `codex -> claude -> qwen -> opencode`, and restores the original interactive service by default.
+
+Important benchmark caveats:
+
+- The H200 matrix runner is implemented but not yet tested end-to-end on the live benchmark sequence.
+- It uses process env only and does not write `.env` files into sibling harness repos.
+- Benchmark run outputs, logs, matrix-run backups, and probe artifacts are intentionally gitignored.
 
 ## Readiness And Monitoring
 
@@ -204,6 +229,7 @@ Current monitor behavior:
 
 ```text
 gpu-skill-builder/
+├── .bench/                        # benchmark harnesses, suites, and H200 matrix runner
 ├── providers/                     # provider implementations used by run_skill()
 ├── skill.py                       # main entrypoint
 ├── profile_registry.py            # typed profile loading + runtime selection
@@ -232,7 +258,7 @@ They are draft planning artifacts for later architecture changes.
 ## Known Limitations
 
 - `run_skill()` success does not mean the endpoint is fully ready; use `ensure_active_endpoint()` before relying on the endpoint.
-- The current profile-driven runtime manifests and harness handoff flow are still untested against live provider and harness runs in this repo cycle.
+- The current DigitalOcean H200 benchmark matrix orchestration is implemented but not yet validated with a live full matrix run.
 - Telegram monitoring requires both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
 - OpenRouter is a fallback lane, not part of the GPU fleet monitor.
 - AMD / MI300X is still blocked in current code.
