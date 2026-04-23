@@ -51,10 +51,13 @@ def main() -> int:
     env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = model
     env["ANTHROPIC_CUSTOM_MODEL_OPTION_NAME"] = f"OpenRouter: {model}"
 
-    print(f"[claudeopen] provider={target.provider_name} base_url={env['ANTHROPIC_BASE_URL']} model={model}")
-    print(f"[claudeopen] config_dir={isolated_config} (isolated from claude.ai login)")
-    print("[claudeopen] env_key=ANTHROPIC_API_KEY (set to OpenRouter key)")
-    print(f"[claudeopen] cmd={' '.join(shlex.quote(c) for c in cmd)}")
+    print(
+        f"[claudeopen] provider={target.provider_name} base_url={env['ANTHROPIC_BASE_URL']} model={model}",
+        file=sys.stderr,
+    )
+    print(f"[claudeopen] config_dir={isolated_config} (isolated from claude.ai login)", file=sys.stderr)
+    print("[claudeopen] env_key=ANTHROPIC_API_KEY (set to OpenRouter key)", file=sys.stderr)
+    print(f"[claudeopen] cmd={' '.join(shlex.quote(c) for c in cmd)}", file=sys.stderr)
 
     if args.dry_run:
         return 0

@@ -32,9 +32,41 @@ def _delegate_native(argv: list[str]) -> int:
     return run_interactive(cmd, os.environ.copy())
 
 
+def _provider_model_id(model_id: str) -> str:
+    if model_id.startswith("openrouter/"):
+        return model_id[len("openrouter/"):]
+    return model_id
+
+
+def _display_name(model_id: str) -> str:
+    return _provider_model_id(model_id).replace("/", " / ")
+
+
+def _family_for_model(model_id: str) -> str:
+    lowered = _provider_model_id(model_id).lower()
+    if "qwen" in lowered:
+        return "qwen"
+    if "claude" in lowered:
+        return "claude"
+    if "gpt" in lowered or "o1" in lowered or "o3" in lowered:
+        return "openai"
+    return "generic"
+
+
 def _openrouter_config_content(target_base_url: str, model_id: str, api_key: str) -> str:
     # Force an in-memory OpenCode config for OpenRouter-only execution so stale
     # local/global provider files cannot drop auth headers or reroute models.
+    provider_model_id = _provider_model_id(model_id)
+    options = {
+        "baseURL": target_base_url,
+        "apiKey": api_key,
+    }
+    if "openrouter.ai" in target_base_url:
+        options["headers"] = {
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "https://opencode.ai/",
+            "X-Title": "opencode",
+        }
     config = {
         "$schema": "https://opencode.ai/config.json",
         "model": model_id,
@@ -44,27 +76,19 @@ def _openrouter_config_content(target_base_url: str, model_id: str, api_key: str
             "openrouter": {
                 "name": "OpenRouter",
                 "npm": "@ai-sdk/openai-compatible",
-                "options": {
-                    "baseURL": target_base_url,
-                    "apiKey": api_key,
-                    "headers": {
-                        "Authorization": f"Bearer {api_key}",
-                        "HTTP-Referer": "https://opencode.ai/",
-                        "X-Title": "opencode",
-                    },
-                },
+                "options": options,
                 "models": {
-                    "qwen/qwen3.6-plus": {
-                        "id": "qwen/qwen3.6-plus",
-                        "name": "Qwen 3.6 Plus (1M)",
-                        "family": "qwen",
+                    provider_model_id: {
+                        "id": provider_model_id,
+                        "name": _display_name(model_id),
+                        "family": _family_for_model(model_id),
                         "attachment": True,
                         "reasoning": True,
                         "temperature": True,
                         "tool_call": True,
                         "limit": {
-                            "context": 1000000,
-                            "output": 32768,
+                            "context": 131072,
+                            "output": 8192,
                         },
                     }
                 },
@@ -151,11 +175,11 @@ def main() -> int:
     )
     env.pop("OPENAI_BASE_URL", None)
 
-    print(f"[opencode] provider={target.provider_name} base_url={target.base_url} model={model_arg}")
-    print("[opencode] env_key=OPENROUTER_API_KEY")
-    print("[opencode] mode=forced-openrouter-config")
-    print(f"[opencode] xdg_root={str(Path.home() / '.opencode-openrouter')}")
-    print(f"[opencode] cmd={' '.join(shlex.quote(c) for c in cmd)}")
+    print(f"[opencode] provider={target.provider_name} base_url={target.base_url} model={model_arg}", file=sys.stderr)
+    print("[opencode] env_key=OPENROUTER_API_KEY", file=sys.stderr)
+    print("[opencode] mode=forced-openrouter-config", file=sys.stderr)
+    print(f"[opencode] xdg_root={str(Path.home() / '.opencode-openrouter')}", file=sys.stderr)
+    print(f"[opencode] cmd={' '.join(shlex.quote(c) for c in cmd)}", file=sys.stderr)
 
     if args.dry_run:
         return 0

@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from config import settings
 
 DEFAULT_OPENROUTER_MODEL = "openai/gpt-oss-120b:free"
+HARNESS_BASE_URL_ENV = "HARNESS_OPENROUTER_BASE_URL"
+HARNESS_MODEL_ENV = "HARNESS_OPENROUTER_MODEL"
+HARNESS_API_KEY_ENV = "HARNESS_OPENROUTER_API_KEY"
 
 
 @dataclass
@@ -41,27 +44,50 @@ def _strip_openrouter_prefix(model: str) -> str:
     return m
 
 
+def _process_override(name: str) -> str:
+    return os.environ.get(name, "").strip()
+
+
+def configured_openrouter_base_url() -> str:
+    """
+    Process-local harness overrides win so benchmark jobs can target a local
+    tunnel without touching repo .env files or sibling repos.
+    """
+    return normalize_base_url(_process_override(HARNESS_BASE_URL_ENV) or settings.openrouter_base_url)
+
+
+def configured_openrouter_api_key() -> str:
+    return _process_override(HARNESS_API_KEY_ENV) or settings.openrouter_api_key
+
+
+def configured_locked_model() -> str:
+    return _strip_openrouter_prefix(_process_override(HARNESS_MODEL_ENV) or DEFAULT_OPENROUTER_MODEL)
+
+
 def resolve_locked_model(requested_model: str = "") -> str:
+    locked_model = configured_locked_model()
     normalized = _strip_openrouter_prefix(requested_model)
-    if normalized and normalized != DEFAULT_OPENROUTER_MODEL:
+    if normalized and normalized != locked_model:
         raise RuntimeError(
             f"Model override '{requested_model}' is not allowed. "
-            f"This launcher is locked to '{DEFAULT_OPENROUTER_MODEL}'."
+            f"This launcher is locked to '{locked_model}'."
         )
-    return DEFAULT_OPENROUTER_MODEL
+    return locked_model
 
 
 def openrouter_target() -> LaunchTarget:
-    if not settings.openrouter_api_key:
+    api_key = configured_openrouter_api_key()
+    if not api_key:
         raise RuntimeError(
-            "OPENROUTER_API_KEY is not configured. Set it in environment or .env first."
+            "OPENROUTER_API_KEY is not configured. Set it in environment or .env first. "
+            "For local benchmark routing, HARNESS_OPENROUTER_API_KEY is also supported."
         )
     return LaunchTarget(
         provider_name="openrouter",
-        base_url=normalize_base_url(settings.openrouter_base_url),
-        model=DEFAULT_OPENROUTER_MODEL,
+        base_url=configured_openrouter_base_url(),
+        model=configured_locked_model(),
         env_key_name="OPENROUTER_API_KEY",
-        env_key_value=settings.openrouter_api_key,
+        env_key_value=api_key,
     )
 
 

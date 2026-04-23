@@ -77,9 +77,9 @@ def main() -> int:
     # Avoid stale shell-level model var causing invalid model resolution in native qwen config.
     env["OPENROUTER_MODEL_ID"] = model
 
-    print(f"[qwen] provider={target.provider_name} base_url={target.base_url} model={model}")
-    print("[qwen] env_key=OPENAI_API_KEY")
-    print(f"[qwen] cmd={' '.join(shlex.quote(c) for c in cmd_redacted)}")
+    print(f"[qwen] provider={target.provider_name} base_url={target.base_url} model={model}", file=sys.stderr)
+    print("[qwen] env_key=OPENAI_API_KEY", file=sys.stderr)
+    print(f"[qwen] cmd={' '.join(shlex.quote(c) for c in cmd_redacted)}", file=sys.stderr)
 
     if args.dry_run:
         return 0

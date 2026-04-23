@@ -3,6 +3,7 @@ import json
 import os
 import re
 import subprocess
+import shutil
 import sys
 import tempfile
 import textwrap
@@ -49,13 +50,30 @@ def _is_claudeopen_cli(path_like: str) -> bool:
 
 
 def _is_qwen_wrapper_cli(path_like: str) -> bool:
-    # Local wrapper path and PATH-installed wrapper are both `qwen.cmd`.
-    return _cli_name(path_like) == "qwen.cmd"
+    # Local wrapper path and native npm install are both named qwen.cmd.
+    return _cli_name(path_like) == "qwen.cmd" and not _is_npm_managed_cli(path_like, "qwen.cmd")
 
 
 def _is_opencode_wrapper_cli(path_like: str) -> bool:
-    # Local wrapper path and PATH-installed wrapper are both `opencode.cmd`.
-    return _cli_name(path_like) == "opencode.cmd"
+    # Local wrapper path and native npm install are both named opencode.cmd.
+    return _cli_name(path_like) == "opencode.cmd" and not _is_npm_managed_cli(path_like, "opencode.cmd")
+
+
+def _is_npm_managed_cli(path_like: str, cli_name: str) -> bool:
+    if _cli_name(path_like) != cli_name:
+        return False
+    path = Path(path_like)
+    if path.parent == NPM_BIN_DIR:
+        return True
+    if path.is_absolute():
+        return False
+    resolved = shutil.which(path_like)
+    if not resolved:
+        return False
+    try:
+        return Path(resolved).resolve().parent == NPM_BIN_DIR.resolve()
+    except FileNotFoundError:
+        return False
 
 
 def run_cmd(
@@ -98,6 +116,18 @@ def strip_wrapper_banner_lines(text: str) -> str:
             continue
         filtered.append(line)
     return "\n".join(filtered).strip()
+
+
+def _response_looks_like_code(text: str) -> bool:
+    if not text.strip():
+        return False
+    patterns = [
+        r"PYTHON_START",
+        r"BEGIN_CODE",
+        r"```(?:python)?",
+        r"(?m)^(?:from\s+\w+|import\s+\w+|class\s+\w+|def\s+\w+)",
+    ]
+    return any(re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL) for pattern in patterns)
 
 
 def extract_code(response_text: str) -> str:
@@ -432,8 +462,12 @@ def run_opencode(prompt: str, timeout_s: int = 240) -> Dict[str, Any]:
         ]
     with tempfile.TemporaryDirectory() as tmp:
         out = run_cmd(cmd, env, timeout_s, cwd=tmp)
-    cleaned = strip_wrapper_banner_lines(strip_ansi(out["stdout"]))
-    out["response_text"] = cleaned.strip()
+    cleaned_stdout = strip_wrapper_banner_lines(strip_ansi(out["stdout"])).strip()
+    cleaned_stderr = strip_wrapper_banner_lines(strip_ansi(out["stderr"])).strip()
+    if _response_looks_like_code(cleaned_stdout) or (cleaned_stdout and not cleaned_stderr):
+        out["response_text"] = cleaned_stdout
+    else:
+        out["response_text"] = ""
     return out
 
 
@@ -596,17 +630,17 @@ def run_goose(prompt: str, timeout_s: int = 300) -> Dict[str, Any]:
     return out
 
 
-def run_harness(harness: str, prompt: str, codex_result_file: Path) -> Dict[str, Any]:
+def run_harness(harness: str, prompt: str, codex_result_file: Path, timeout_s: int | None = None) -> Dict[str, Any]:
     if harness == "qwen":
-        return run_qwen(prompt)
+        return run_qwen(prompt, timeout_s=timeout_s or 240)
     if harness == "opencode":
-        return run_opencode(prompt)
+        return run_opencode(prompt, timeout_s=timeout_s or 240)
     if harness == "codex":
-        return run_codex(prompt, codex_result_file)
+        return run_codex(prompt, codex_result_file, timeout_s=timeout_s or 300)
     if harness == "claude":
-        return run_claude(prompt)
+        return run_claude(prompt, timeout_s=timeout_s or 300)
     if harness == "goose":
-        return run_goose(prompt)
+        return run_goose(prompt, timeout_s=timeout_s or 300)
     raise ValueError(f"Unknown harness: {harness}")
 
 

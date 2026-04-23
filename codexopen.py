@@ -76,10 +76,10 @@ def main() -> int:
     env = os.environ.copy()
     env[target.env_key_name] = target.env_key_value
 
-    print(f"[codexopen] provider={target.provider_name} base_url={target.base_url} model={model}")
-    print(f"[codexopen] env_key={target.env_key_name}")
-    print(f"[codexopen] compat_disables={','.join(COMPAT_DISABLE_FEATURES)}")
-    print(f"[codexopen] cmd={' '.join(shlex.quote(c) for c in cmd)}")
+    print(f"[codexopen] provider={target.provider_name} base_url={target.base_url} model={model}", file=sys.stderr)
+    print(f"[codexopen] env_key={target.env_key_name}", file=sys.stderr)
+    print(f"[codexopen] compat_disables={','.join(COMPAT_DISABLE_FEATURES)}", file=sys.stderr)
+    print(f"[codexopen] cmd={' '.join(shlex.quote(c) for c in cmd)}", file=sys.stderr)
 
     if args.dry_run:
         return 0
