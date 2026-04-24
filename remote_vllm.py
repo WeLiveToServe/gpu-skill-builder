@@ -198,6 +198,8 @@ def render_vllm_runtime_args(
         args.append("--enable-eplb")
     if runtime.prefix_caching_policy == "enabled":
         args.append("--enable-prefix-caching")
+    elif runtime.prefix_caching_policy == "disabled":
+        args.append("--no-enable-prefix-caching")
     if runtime.chunked_prefill_policy == "enabled":
         args.append("--enable-chunked-prefill")
     args.extend(runtime.extra_args)

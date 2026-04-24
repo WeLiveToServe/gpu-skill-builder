@@ -125,6 +125,7 @@ def _run_local(
         cwd=str(cwd) if cwd else None,
         env=env,
         input=input_text,
+        stdin=subprocess.DEVNULL if input_text is None else None,
         text=True,
         encoding="utf-8",
         errors="replace",

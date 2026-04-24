@@ -29,6 +29,9 @@ COMPAT_DISABLE_FEATURES = [
 
 def _build_codex_cmd(target: LaunchTarget, cwd: str, model: str, passthrough: list[str]) -> list[str]:
     provider_id = "relay"
+    reasoning_effort = os.environ.get("HARNESS_CODEX_REASONING_EFFORT", "").strip()
+    if not reasoning_effort and "openrouter.ai" not in target.base_url:
+        reasoning_effort = "high"
     cmd = [
         "codex",
         "-c",
@@ -46,6 +49,8 @@ def _build_codex_cmd(target: LaunchTarget, cwd: str, model: str, passthrough: li
         "-C",
         cwd,
     ]
+    if reasoning_effort:
+        cmd.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
     for feature in COMPAT_DISABLE_FEATURES:
         cmd.extend(["--disable", feature])
     if passthrough:

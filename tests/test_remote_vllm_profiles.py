@@ -43,5 +43,6 @@ def test_harness_eval_profile_disables_prefix_caching_and_lowers_concurrency():
 
     assert args[args.index("--max-num-seqs") + 1] == "2"
     assert args[args.index("--max-num-batched-tokens") + 1] == "8192"
+    assert "--no-enable-prefix-caching" in args
     assert "--enable-prefix-caching" not in args
     assert "--enable-chunked-prefill" in args
