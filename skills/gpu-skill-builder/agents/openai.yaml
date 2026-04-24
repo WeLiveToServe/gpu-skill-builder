@@ -1,0 +1,4 @@
+interface:
+  display_name: "GPU Skill Builder"
+  short_description: "Maintain GPU endpoint workflows"
+  default_prompt: "Use $gpu-skill-builder to safely maintain provider, profile, readiness, handoff, and benchmark workflows."
