@@ -11,6 +11,26 @@ Important current rule:
 
 ## Research Packages
 
+### Temporal Applicability Research
+
+Location: [docs/research/temporal-application](./research/temporal-application)
+
+Recommended reading:
+
+1. [Temporal Applicability Report](./research/temporal-application/TEMPORAL_APPLICABILITY_REPORT.md)
+
+This report consumes `temporalio/temporal` and maps its durable execution, workflow/activity, task queue, visibility, schedule, testing, and safe-deployment patterns onto `gpu-skill-builder`.
+
+### Phoenix Framework Applicability Research
+
+Location: [docs/research/phoenix-framework-application](./research/phoenix-framework-application)
+
+Recommended reading:
+
+1. [Phoenix Framework Applicability Report](./research/phoenix-framework-application/PHOENIX_APPLICABILITY_REPORT.md)
+
+This report consumes `phoenixframework/phoenix` and maps its production-testing, generator, telemetry, real-time, and deployment patterns onto `gpu-skill-builder`.
+
 ### Production-Grade GPU Deployment Research Package
 
 Location: [docs/research/production-grade-gpu-deployment](./research/production-grade-gpu-deployment)
@@ -41,6 +61,10 @@ Recommended reading order:
   Recommended implementation order for turning the research package into durable repo changes.
 - [Model/Provider/Runtime Matrix](./research/production-grade-gpu-deployment/MODEL_PROVIDER_RUNTIME_MATRIX.json)
   Machine-readable draft mapping for resolved model targets, provider classifications, runtime choices, and conservative profiles.
+- [Phoenix Framework Applicability Report](./research/phoenix-framework-application/PHOENIX_APPLICABILITY_REPORT.md)
+  Applied report on how Phoenix's testing, generator, telemetry, real-time, deployment, and docs patterns could strengthen this project without prematurely rewriting the Python core.
+- [Temporal Applicability Report](./research/temporal-application/TEMPORAL_APPLICABILITY_REPORT.md)
+  Applied report on how Temporal's durable workflow, activity retry, heartbeat, task queue, schedule, visibility, and safe-deployment patterns could strengthen GPU deployment and benchmark orchestration.
 
 ## Current Posture
 
