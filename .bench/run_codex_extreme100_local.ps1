@@ -12,7 +12,6 @@ function Load-EnvFile([string]$path){
 Load-EnvFile 'C:\Users\keith\dev\.env'
 Load-EnvFile 'C:\Users\keith\dev\cli-harness\.env'
 Load-EnvFile 'C:\Users\keith\dev\gpu-skill-builder\.env'
-Load-EnvFile 'C:\Users\keith\dev\codex-os-harness\.env'
 
 if(-not $env:OPENROUTER_API_KEY -and $env:HARNESS_OPENROUTER_API_KEY){ $env:OPENROUTER_API_KEY=$env:HARNESS_OPENROUTER_API_KEY }
 if(-not $env:BENCH_OPENAI_BASE_URL){
@@ -26,7 +25,7 @@ if(-not $env:BENCH_ANTHROPIC_BASE_URL){
 }
 $model = if($env:BENCH_CODEX_MODEL){$env:BENCH_CODEX_MODEL}elseif($env:HARNESS_OPENROUTER_MODEL){$env:HARNESS_OPENROUTER_MODEL}elseif($env:OPENROUTER_MODEL){$env:OPENROUTER_MODEL}else{'qwen/qwen3.6-plus'}
 $env:BENCH_CODEX_MODEL=$model
-$env:BENCH_CODEX_CLI='C:\Users\keith\dev\codex-os-harness\codexopen.cmd'
+$env:BENCH_CODEX_CLI='C:\Users\keith\dev\cli-harness\codex-os.cmd'
 
 if(-not $env:OPENROUTER_API_KEY){ throw 'OPENROUTER_API_KEY missing' }
 

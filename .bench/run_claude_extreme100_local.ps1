@@ -11,7 +11,6 @@ function Load-EnvFile([string]$path){
 Load-EnvFile 'C:\Users\keith\dev\.env'
 Load-EnvFile 'C:\Users\keith\dev\cli-harness\.env'
 Load-EnvFile 'C:\Users\keith\dev\gpu-skill-builder\.env'
-Load-EnvFile 'C:\Users\keith\dev\claude-open-source\.env'
 
 if(-not $env:OPENROUTER_API_KEY -and $env:HARNESS_OPENROUTER_API_KEY){ $env:OPENROUTER_API_KEY=$env:HARNESS_OPENROUTER_API_KEY }
 if(-not $env:BENCH_OPENAI_BASE_URL){
@@ -25,7 +24,7 @@ if(-not $env:BENCH_ANTHROPIC_BASE_URL){
 }
 $model = if($env:BENCH_CLAUDE_MODEL){$env:BENCH_CLAUDE_MODEL}elseif($env:HARNESS_OPENROUTER_MODEL){$env:HARNESS_OPENROUTER_MODEL}elseif($env:OPENROUTER_MODEL){$env:OPENROUTER_MODEL}else{'qwen/qwen3.6-plus'}
 $env:BENCH_CLAUDE_MODEL=$model
-$env:BENCH_CLAUDE_CLI='C:\Users\keith\dev\claude-open-source\claudeopen.cmd'
+$env:BENCH_CLAUDE_CLI='C:\Users\keith\dev\cli-harness\claude-os.cmd'
 if(-not $env:OPENROUTER_API_KEY){ throw 'OPENROUTER_API_KEY missing' }
 Set-Location 'C:\Users\keith\dev\gpu-skill-builder\.bench'
 $log = Join-Path (Join-Path $PWD 'logs') ("claude_extreme100_" + (Get-Date -Format 'yyyyMMdd_HHmmss') + '.log')

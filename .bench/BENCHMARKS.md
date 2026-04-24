@@ -34,11 +34,13 @@ export BENCH_CODEX_MODEL=qwen/qwen3.6-plus                 # default
 export BENCH_OPENCODE_MODEL=openrouter/qwen/qwen3.6-plus   # default
 export BENCH_QWEN_MODEL=qwen/qwen3.6-plus                  # default
 
-# Optional: override CLI paths (defaults to %APPDATA%/npm/*.cmd)
-export BENCH_CLAUDE_CLI=/path/to/claude.cmd
-export BENCH_CODEX_CLI=/path/to/codex.cmd
-export BENCH_OPENCODE_CLI=/path/to/opencode.cmd
-export BENCH_QWEN_CLI=/path/to/qwen.cmd
+# Optional: override CLI paths
+# Defaults to ~/dev/cli-harness/{claude-os,codex-os,opencode,qwen}.cmd
+export CLI_HARNESS_DIR=~/dev/cli-harness
+export BENCH_CLAUDE_CLI=~/dev/cli-harness/claude-os.cmd
+export BENCH_CODEX_CLI=~/dev/cli-harness/codex-os.cmd
+export BENCH_OPENCODE_CLI=~/dev/cli-harness/opencode.cmd
+export BENCH_QWEN_CLI=~/dev/cli-harness/qwen.cmd
 
 # Goose runner (install binary first: run download_cli.ps1 in goose repo)
 # Defaults to ~/.local/bin/goose (or goose.exe on Windows)
@@ -52,6 +54,7 @@ Codex compatibility note:
 Local GPU benchmark note:
 - A new DigitalOcean H200 matrix orchestrator lives at `.bench/run_do_h200_extreme100_matrix.py`.
 - It temporarily relaunches the current droplet in clean `gpt-oss-120b` benchmark mode, opens a local tunnel, runs `codex -> claude -> qwen -> opencode`, and restores the original interactive service by default.
+- The benchmark path treats `~/dev/cli-harness` as the wrapper source of truth; root and embedded wrapper files in `gpu-skill-builder` are compatibility shims.
 - This orchestration path is implemented but still untested end-to-end until we run the real remote job.
 
 **Goose binary:** Install from the goose repo before using the goose harness:

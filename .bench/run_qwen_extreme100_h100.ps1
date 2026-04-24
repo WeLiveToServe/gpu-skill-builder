@@ -11,7 +11,6 @@ function Load-EnvFile([string]$path){
 Load-EnvFile 'C:\Users\keith\dev\.env'
 Load-EnvFile 'C:\Users\keith\dev\cli-harness\.env'
 Load-EnvFile 'C:\Users\keith\dev\gpu-skill-builder\.env'
-Load-EnvFile 'C:\Users\keith\dev\qwen-code\.env'
 
 $gpuBase='http://157.245.71.5:8000/v1'
 $gpuModel='google/gemma-4-31B-it'
@@ -22,7 +21,7 @@ if(-not $env:HARNESS_OPENROUTER_API_KEY -and $env:OPENROUTER_API_KEY){ $env:HARN
 
 $env:BENCH_OPENAI_BASE_URL=$gpuBase
 $env:BENCH_QWEN_MODEL=$gpuModel
-$env:BENCH_QWEN_CLI='C:\Users\keith\dev\qwen-code\qwen.cmd'
+$env:BENCH_QWEN_CLI='C:\Users\keith\dev\cli-harness\qwen.cmd'
 
 Set-Location 'C:\Users\keith\dev\gpu-skill-builder\.bench'
 $logs = Join-Path $PWD 'logs'

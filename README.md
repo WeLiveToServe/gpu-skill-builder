@@ -58,6 +58,11 @@ Benchmark code lives under `.bench/`. The current benchmark path has two support
 - OpenRouter/default mode, driven by normal OpenRouter environment configuration.
 - Local-GPU mode, driven by process-scoped `HARNESS_OPENROUTER_BASE_URL`, `HARNESS_OPENROUTER_MODEL`, and `HARNESS_OPENROUTER_API_KEY` overrides.
 
+The benchmark runners now call the canonical wrapper checkout at `~/dev/cli-harness`
+by default (`codex-os.cmd`, `claude-os.cmd`, `qwen.cmd`, and `opencode.cmd`).
+Set `CLI_HARNESS_DIR` or the individual `BENCH_*_CLI` variables only when testing a
+different wrapper checkout.
+
 The DigitalOcean H200 matrix runner:
 
 ```bash
@@ -71,6 +76,7 @@ Important benchmark caveats:
 
 - The H200 matrix runner is implemented but not yet tested end-to-end on the live benchmark sequence.
 - It uses process env only and does not write `.env` files into sibling harness repos.
+- Root-level wrapper files in this repo are compatibility shims; new wrapper behavior belongs in `~/dev/cli-harness`.
 - Benchmark run outputs, logs, matrix-run backups, and probe artifacts are intentionally gitignored.
 
 ## Readiness And Monitoring

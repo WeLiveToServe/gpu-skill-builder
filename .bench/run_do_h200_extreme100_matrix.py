@@ -21,6 +21,7 @@ BENCH_DIR = Path(__file__).resolve().parent
 JOB_RUNS_DIR = BENCH_DIR / "matrix-runs"
 TASK_REGISTRY_PATH = BENCH_DIR / "task_suites_registry.json"
 DO_STATE_PATH = REPO_ROOT / ".do_state.json"
+CLI_HARNESS_DIR = Path(os.environ.get("CLI_HARNESS_DIR", str(Path.home() / "dev" / "cli-harness"))).expanduser()
 DEFAULT_SSH_KEY = Path.home() / ".ssh" / "do_agent_ed25519"
 DEFAULT_SERVICE_PATH = "/etc/systemd/system/vllm.service"
 DEFAULT_ENV_PATH = "/etc/vllm/gpt-oss-120b.env"
@@ -384,10 +385,10 @@ def _build_benchmark_env(*, base_url: str, api_key: str, model_id: str) -> dict[
     env["BENCH_CLAUDE_MODEL"] = model_id
     env["BENCH_QWEN_MODEL"] = model_id
     env["BENCH_OPENCODE_MODEL"] = model_id
-    env["BENCH_CODEX_CLI"] = str(REPO_ROOT / "codexopen.cmd")
-    env["BENCH_CLAUDE_CLI"] = str(REPO_ROOT / "claudeopen.cmd")
-    env["BENCH_QWEN_CLI"] = str(REPO_ROOT / "qwen.cmd")
-    env["BENCH_OPENCODE_CLI"] = str(REPO_ROOT / "opencode.cmd")
+    env["BENCH_CODEX_CLI"] = str(CLI_HARNESS_DIR / "codex-os.cmd")
+    env["BENCH_CLAUDE_CLI"] = str(CLI_HARNESS_DIR / "claude-os.cmd")
+    env["BENCH_QWEN_CLI"] = str(CLI_HARNESS_DIR / "qwen.cmd")
+    env["BENCH_OPENCODE_CLI"] = str(CLI_HARNESS_DIR / "opencode.cmd")
     return env
 
 

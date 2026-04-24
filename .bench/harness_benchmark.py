@@ -26,10 +26,11 @@ CODEX_MODEL = os.environ.get("BENCH_CODEX_MODEL", "qwen/qwen3.6-plus")
 CLAUDE_MODEL = os.environ.get("BENCH_CLAUDE_MODEL", "qwen/qwen3.6-plus")
 
 NPM_BIN_DIR = Path(os.environ.get("APPDATA", "")) / "npm"
-QWEN_CLI = os.environ.get("BENCH_QWEN_CLI", str(NPM_BIN_DIR / "qwen.cmd"))
-OPENCODE_CLI = os.environ.get("BENCH_OPENCODE_CLI", str(NPM_BIN_DIR / "opencode.cmd"))
-CODEX_CLI = os.environ.get("BENCH_CODEX_CLI", str(NPM_BIN_DIR / "codex.cmd"))
-CLAUDE_CLI = os.environ.get("BENCH_CLAUDE_CLI", str(NPM_BIN_DIR / "claude.cmd"))
+CLI_HARNESS_DIR = Path(os.environ.get("CLI_HARNESS_DIR", str(Path.home() / "dev" / "cli-harness"))).expanduser()
+QWEN_CLI = os.environ.get("BENCH_QWEN_CLI", str(CLI_HARNESS_DIR / "qwen.cmd"))
+OPENCODE_CLI = os.environ.get("BENCH_OPENCODE_CLI", str(CLI_HARNESS_DIR / "opencode.cmd"))
+CODEX_CLI = os.environ.get("BENCH_CODEX_CLI", str(CLI_HARNESS_DIR / "codex-os.cmd"))
+CLAUDE_CLI = os.environ.get("BENCH_CLAUDE_CLI", str(CLI_HARNESS_DIR / "claude-os.cmd"))
 
 GOOSE_CLI = os.environ.get("BENCH_GOOSE_CLI", str(Path.home() / ".local" / "bin" / "goose"))
 GOOSE_MODEL = os.environ.get("BENCH_GOOSE_MODEL", "q")
@@ -42,11 +43,11 @@ def _cli_name(path_like: str) -> str:
 
 
 def _is_codexopen_cli(path_like: str) -> bool:
-    return _cli_name(path_like) == "codexopen.cmd"
+    return _cli_name(path_like) in {"codex-os.cmd", "codexopen.cmd"}
 
 
 def _is_claudeopen_cli(path_like: str) -> bool:
-    return _cli_name(path_like) == "claudeopen.cmd"
+    return _cli_name(path_like) in {"claude-os.cmd", "claudeopen.cmd"}
 
 
 def _is_qwen_wrapper_cli(path_like: str) -> bool:
@@ -110,7 +111,14 @@ def strip_wrapper_banner_lines(text: str) -> str:
     filtered: List[str] = []
     for line in text.splitlines():
         s = line.strip()
-        if s.startswith("[codexopen]") or s.startswith("[claudeopen]") or s.startswith("[qwen]") or s.startswith("[opencode]"):
+        if (
+            s.startswith("[codex-os]")
+            or s.startswith("[claude-os]")
+            or s.startswith("[codexopen]")
+            or s.startswith("[claudeopen]")
+            or s.startswith("[qwen]")
+            or s.startswith("[opencode]")
+        ):
             continue
         if s.startswith("> build"):
             continue
@@ -393,11 +401,11 @@ def run_qwen(prompt: str, timeout_s: int = 240) -> Dict[str, Any]:
         # Wrapper already injects OpenRouter auth + model wiring.
         cmd = [
             QWEN_CLI,
+            "--psycho",
             "--prompt",
             prompt,
             "--output-format",
             "json",
-            "--yolo",
         ]
     else:
         openrouter_key = env.get("OPENROUTER_API_KEY", "").strip()
@@ -441,9 +449,9 @@ def run_opencode(prompt: str, timeout_s: int = 240) -> Dict[str, Any]:
         # Wrapper sets model + provider config; avoid duplicating -m.
         cmd = [
             OPENCODE_CLI,
+            "--psycho",
             "run",
             prompt,
-            "--dangerously-skip-permissions",
             "--pure",
         ]
     else:
@@ -480,11 +488,11 @@ def run_codex(prompt: str, result_file: Path, timeout_s: int = 300) -> Dict[str,
         if _is_codexopen_cli(CODEX_CLI):
             cmd = [
                 CODEX_CLI,
+                "--psycho",
                 "exec",
                 "--skip-git-repo-check",
                 "-C",
                 tmp,
-                "--dangerously-bypass-approvals-and-sandbox",
                 "-o",
                 str(result_file),
             ]
@@ -569,14 +577,12 @@ def run_claude(prompt: str, timeout_s: int = 300) -> Dict[str, Any]:
         # which is where the response text lives when result field is empty.
         cmd = [
             CLAUDE_CLI,
+            "--psycho",
             "-p",
             prompt,
             "--output-format",
             "stream-json",
             "--verbose",
-            "--permission-mode",
-            "bypassPermissions",
-            "--dangerously-skip-permissions",
         ]
     else:
         openrouter_key = env.get("OPENROUTER_API_KEY", "").strip()

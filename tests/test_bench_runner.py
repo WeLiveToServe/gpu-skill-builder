@@ -55,7 +55,7 @@ def test_run_named_suite_supports_task_subset_and_run_label(tmp_path, monkeypatc
     monkeypatch.setattr(runner, "_suite_module_path", lambda suite_id: suite_path)
     monkeypatch.setattr(runner.hb, "RESULTS_DIR", tmp_path / "results")
     monkeypatch.setattr(runner.hb, "CODEX_MODEL", "gpt-oss-120b")
-    monkeypatch.setattr(runner.hb, "CODEX_CLI", str(REPO_ROOT / "codexopen.cmd"))
+    monkeypatch.setattr(runner.hb, "CODEX_CLI", str(runner.hb.CLI_HARNESS_DIR / "codex-os.cmd"))
     monkeypatch.setattr(runner.hb, "run_harness", _fake_run_harness)
     monkeypatch.setattr(runner, "_evaluate_code_with_timeout", lambda *args, **kwargs: (True, []))
 
@@ -89,3 +89,14 @@ def test_select_tasks_rejects_unknown_task_id():
 
     with pytest.raises(ValueError, match="Unknown task IDs"):
         runner._select_tasks(tasks, ["missing"])
+
+
+def test_default_benchmark_clis_point_to_canonical_cli_harness():
+    hb = _load_module("harness_benchmark_defaults", BENCH_DIR / "harness_benchmark.py")
+
+    assert Path(hb.CODEX_CLI).name == "codex-os.cmd"
+    assert Path(hb.CLAUDE_CLI).name == "claude-os.cmd"
+    assert Path(hb.QWEN_CLI).name == "qwen.cmd"
+    assert Path(hb.OPENCODE_CLI).name == "opencode.cmd"
+    assert hb._is_codexopen_cli(hb.CODEX_CLI)
+    assert hb._is_claudeopen_cli(hb.CLAUDE_CLI)

@@ -11,7 +11,6 @@ function Load-EnvFile([string]$path){
 Load-EnvFile 'C:\Users\keith\dev\.env'
 Load-EnvFile 'C:\Users\keith\dev\cli-harness\.env'
 Load-EnvFile 'C:\Users\keith\dev\gpu-skill-builder\.env'
-Load-EnvFile 'C:\Users\keith\dev\qwen-code\.env'
 if(-not $env:OPENROUTER_API_KEY -and $env:HARNESS_OPENROUTER_API_KEY){ $env:OPENROUTER_API_KEY=$env:HARNESS_OPENROUTER_API_KEY }
 if(-not $env:BENCH_OPENAI_BASE_URL){
   if($env:HARNESS_OPENROUTER_BASE_URL){ $env:BENCH_OPENAI_BASE_URL=$env:HARNESS_OPENROUTER_BASE_URL }
@@ -24,7 +23,7 @@ if(-not $env:BENCH_ANTHROPIC_BASE_URL){
 }
 $model = if($env:BENCH_QWEN_MODEL){$env:BENCH_QWEN_MODEL}elseif($env:HARNESS_OPENROUTER_MODEL){$env:HARNESS_OPENROUTER_MODEL}elseif($env:OPENROUTER_MODEL){$env:OPENROUTER_MODEL}else{'qwen/qwen3.6-plus'}
 $env:BENCH_QWEN_MODEL=$model
-$env:BENCH_QWEN_CLI='C:\Users\keith\dev\qwen-code\qwen.cmd'
+$env:BENCH_QWEN_CLI='C:\Users\keith\dev\cli-harness\qwen.cmd'
 if(-not $env:OPENROUTER_API_KEY){ throw 'OPENROUTER_API_KEY missing' }
 Set-Location 'C:\Users\keith\dev\gpu-skill-builder\.bench'
 $log = Join-Path (Join-Path $PWD 'logs') ("qwen_extreme100_" + (Get-Date -Format 'yyyyMMdd_HHmmss') + '.log')

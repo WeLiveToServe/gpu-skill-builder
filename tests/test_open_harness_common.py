@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from open_harness_common import openrouter_target, resolve_locked_model
-from opencodeopen import _openrouter_config_content
+from opencodeopen import _opencode_model_arg, _openrouter_config_content
 
 
 def test_openrouter_target_prefers_process_local_harness_overrides(monkeypatch):
@@ -31,6 +31,11 @@ def test_opencode_config_supports_dynamic_local_gpu_model():
     provider = payload["provider"]["openrouter"]
     assert payload["model"] == "openrouter/gpt-oss-120b"
     assert provider["options"]["baseURL"] == "http://127.0.0.1:18000/v1"
-    assert "headers" not in provider["options"]
+    assert provider["options"]["headers"]["Authorization"] == "Bearer bench-key"
     assert "gpt-oss-120b" in provider["models"]
     assert provider["models"]["gpt-oss-120b"]["tool_call"] is True
+
+
+def test_opencode_model_arg_does_not_double_prefix_openrouter_auto():
+    assert _opencode_model_arg("openrouter/auto") == "openrouter/auto"
+    assert _opencode_model_arg("qwen/qwen3.6-plus") == "openrouter/qwen/qwen3.6-plus"

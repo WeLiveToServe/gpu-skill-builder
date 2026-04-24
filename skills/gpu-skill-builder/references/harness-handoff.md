@@ -7,8 +7,10 @@ Use this reference when changing endpoint handoff manifests, harness profiles, C
 - Handoff manifest builder: `handoff.py`
 - Manifest models: `models.py`
 - Harness profile manifests: `profiles/harnesses/`
-- CLI wrapper common code: `open_harness_common.py`
-- CLI wrappers: `codexopen.py`, `claudeopen.py`, `qwenopen.py`, `opencodeopen.py`
+- Canonical CLI wrapper checkout: `~/dev/cli-harness` or `CLI_HARNESS_DIR`
+- Canonical CLI wrapper common code: `~/dev/cli-harness/open_harness_common.py`
+- Canonical CLI commands: `codex-os.cmd`, `claude-os.cmd`, `qwen.cmd`, `opencode.cmd`
+- Local repo wrapper files: compatibility shims only
 - Harness runbook evidence: `cli-playbooks/`
 
 ## Handoff Contract
@@ -29,7 +31,11 @@ Never include API keys or provider secrets in the handoff manifest.
 
 Harness profiles control whether `/v1` is appended and which model name source is used. Keep this centralized in `handoff.py` and `profiles/harnesses/` rather than hardcoding per caller.
 
-The CLI wrappers are primarily OpenRouter/local-compatible launch helpers. Benchmark and local-GPU routing should use process-scoped `HARNESS_OPENROUTER_BASE_URL`, `HARNESS_OPENROUTER_MODEL`, and `HARNESS_OPENROUTER_API_KEY` overrides instead of editing local `.env` files or sibling harness repos.
+The CLI wrappers are primarily OpenRouter/local-compatible launch helpers.
+Benchmark and local-GPU routing should call the canonical `cli-harness` wrappers
+and use process-scoped `HARNESS_OPENROUTER_BASE_URL`,
+`HARNESS_OPENROUTER_MODEL`, and `HARNESS_OPENROUTER_API_KEY` overrides instead
+of editing local `.env` files or sibling harness repos.
 
 ## Change Rules
 
